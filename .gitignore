@@ -1,0 +1,13 @@
+ignore
+trial.py
+*.ipynb
+__pycache__/
+*.py[cod]
+*$py.class
+LocalModels/
+EmbedModels/
+chroma_db/
+.streamlit/
+data_files/*.xlsx
+MLModels/*.pkl
+.ipynb_checkpoints/

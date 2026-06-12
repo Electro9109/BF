@@ -1,0 +1,33 @@
+TITLE: Sinter as Blast Furnace Burden Material
+
+OVERVIEW
+Sinter is an agglomerated iron-bearing material produced by heating a mixture of fine iron ore, coke breeze (fuel), limestone/dolomite (flux), and recycled fines on a continuous traveling grate. The mixture is ignited at the surface and combustion propagates downward through the bed, partially fusing the particles into a porous, cake-like product that is then crushed and screened to size (typically 5-50 mm) for blast furnace use. Sinter is the dominant burden component in many integrated steel plants (often 50-70% of the ferrous burden) because it allows direct utilization of fine ore and recycled plant fines while incorporating flux directly into the agglomerate.
+
+KEY MECHANISMS
+During sintering, the bed reaches local temperatures of 1250-1400°C as coke breeze combusts. At these temperatures, partial melting occurs, forming a bonding matrix of calcium ferrites (CaO.Fe2O3, CaO.2Fe2O3) and calcium silicates, which solidify on cooling to bind the unmelted ore grains together. The resulting microstructure is a heterogeneous mix of primary hematite/magnetite grains, secondary magnetite formed during cooling, calcium ferrite bonding phases (SFCA - silico-ferrite of calcium and aluminum), and glassy silicate phases.
+
+Because flux (CaO source) is blended directly into the sinter mix before firing, sinter basicity (B2 = CaO/SiO2) is a directly controllable plant parameter, typically targeted in the range of 1.6-2.2 (see basicity.txt). The calcium ferrite phases formed at this basicity level are generally more reducible than pure hematite or fayalite-bonded structures, giving sinter good reducibility despite its lower porosity compared to pellets.
+
+EFFECT ON Ts
+Sinter's softening behavior is closely tied to its basicity and SFCA content. At typical plant basicity (1.6-2.0), the calcium ferrite bonding phases begin to soften at moderate temperatures, but because sinter is usually well pre-reduced relative to pellets at equivalent positions in the furnace (due to good early-stage reducibility from calcium ferrites), Ts for sinter is often comparable to or somewhat higher than for acid pellets at the same gas atmosphere. Increasing sinter basicity within the normal range tends to raise Ts moderately, as more CaO must react before the silicate liquid phase becomes mobile.
+
+EFFECT ON Tm
+Tm for sinter is strongly governed by basicity: at basicity near 1.6-1.8, the slag composition is close to a low-melting eutectic in the CaO-SiO2-FeO-Al2O3 system, minimizing Tm. Below this range (more acidic sinter), increasing silica content raises Tm due to more refractory silicate phases. Above this range (over-fluxed sinter), excess free CaO/dicalcium silicate (which has a high melting point, ~2130°C for pure 2CaO.SiO2, though diluted by other oxides in practice) can also raise Tm if not fully dissolved into the liquid slag.
+
+EFFECT ON Tm-Ts
+Sinter at optimum basicity (around 1.6-1.9) typically shows one of the narrower Tm-Ts intervals among common burden materials, often in the range of 130-180°C, because both Ts and Tm are influenced favorably by the same basicity-controlled slag chemistry near-eutectic composition. Sinter-dominant burdens are therefore often used as the "baseline" against which pellet or ore additions are evaluated for their effect on cohesive zone width.
+
+ADVANTAGES
+- Allows utilization of fine ore and recycled plant fines that cannot be charged directly.
+- Flux is pre-incorporated, reducing the need for separate limestone charging and improving slag homogeneity.
+- Generally good reducibility due to calcium ferrite bonding phases.
+- Basicity is directly tunable at the plant, providing a primary lever for cohesive zone control.
+
+LIMITATIONS
+- Sinter production is energy- and emissions-intensive (significant SOx, NOx, and dust generation).
+- Sinter strength (tumble index) and reduction degradation index (RDI) must be balanced against basicity targets; very high basicity can reduce mechanical strength.
+- Sinter quality is sensitive to raw material variability (ore fines source, moisture, coke breeze sizing), requiring ongoing process control.
+- Compared to pellets, sinter generally has lower porosity and can have a wider particle size distribution, affecting bed permeability independent of cohesive zone effects.
+
+REFERENCES
+Sintering process textbooks and plant practice guides covering bed combustion mechanics, SFCA phase formation, and basicity-driven quality control; comparative softening-melting studies of sinter versus pellet versus lump ore at matched basicity levels.

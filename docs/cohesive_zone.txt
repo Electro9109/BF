@@ -1,0 +1,44 @@
+TITLE: The Cohesive Zone in Blast Furnace Operation
+
+OVERVIEW
+The cohesive zone (also called the softening-melting zone) is the region inside a blast furnace where the iron-bearing burden materials (sinter, pellets, lump ore) transition from solid lumps to a softened, partially liquid, low-permeability state, and finally to fully molten material that drips down through the coke bed (dripping zone). This zone typically takes the shape of an inverted "V" or "W" depending on burden distribution practice, located roughly in the lower-middle portion of the furnace stack, above the raceway/tuyere zone.
+
+The cohesive zone is bounded thermally by two key temperatures measured in laboratory softening-melting (SM) tests under simulated load and reducing gas conditions:
+
+- Ts (softening start temperature): the temperature at which the sample begins to deform/shrink under applied load due to initial liquid phase formation.
+- Tm (melting/dropping temperature): the temperature at which the sample has become sufficiently liquid to drip through a support grid, marking the end of the cohesive layer.
+
+The interval Tm - Ts defines the temperature range, and by extension the physical thickness, of the cohesive layers for that burden material.
+
+KEY MECHANISMS
+Within the cohesive zone, alternating layers of ore/sinter/pellet (ore layers) and coke (coke slits) exist. The ore layers become impermeable to gas as they soften and form liquid slag, forcing the ascending reducing gas to flow preferentially through the coke slits. The width of the cohesive zone (related to Tm-Ts) directly determines how thick these impermeable ore layers become, and therefore how much of the furnace cross-section is blocked to gas flow at any given level.
+
+A wide cohesive zone (large Tm-Ts) means that, at any horizontal level within the zone, a larger fraction of burden material is in the impermeable softened-but-not-yet-molten state simultaneously. This increases resistance to gas flow, raising the overall pressure drop across the furnace for a given gas flow rate (blast volume). A narrow cohesive zone means burden material passes quickly from solid to liquid, spending less time in the high-resistance intermediate state, which keeps coke slits open and gas flow distributed more evenly.
+
+EFFECT ON Ts
+Ts is influenced by burden mineralogy (basicity, see basicity.txt), reduction degree achieved before reaching the cohesive zone (see hydrogen_reduction.txt and reducibility), and the proportions of sinter versus pellet versus lump ore (see pellet.txt), since each material type has a characteristic softening behavior. In the context of the cohesive zone as a whole, Ts essentially marks the upper boundary (in furnace height terms, the highest point) of the cohesive zone for a given burden layer.
+
+EFFECT ON Tm
+Tm marks the lower boundary of the cohesive zone (the point at which material transitions into the dripping zone). Tm is governed primarily by the final slag chemistry and its melting point/eutectic behavior, which again ties back to basicity and the presence of fluxing oxides like MgO. A lower Tm means the ore layer fully liquefies sooner, shortening the cohesive layer.
+
+EFFECT ON Tm-Ts
+Tm-Ts is, by definition, the direct quantitative measure of cohesive zone width for a given material. Operationally:
+
+- A narrow Tm-Ts (e.g., 100-150°C) is associated with thin cohesive layers, lower pressure drop, more uniform gas distribution, and generally higher furnace productivity and lower fuel rate.
+- A wide Tm-Ts (e.g., 200°C or more) is associated with thick cohesive layers, higher pressure drop, increased risk of gas channeling or "hanging" (temporary blockages followed by sudden burden slips), and reduced productivity.
+
+Furnace operators and process engineers use Tm-Ts as a key target when selecting burden composition (basicity, pellet/sinter ratio) and when adjusting reducing gas composition (e.g., hydrogen enrichment), because it is one of the few burden-quality parameters directly linked to in-furnace permeability.
+
+ADVANTAGES (of a well-controlled, narrow cohesive zone)
+- Lower overall pressure drop allows higher blast volumes and higher productivity.
+- More even gas distribution improves overall reduction efficiency and lowers fuel rate.
+- Reduced risk of furnace instabilities such as hanging and slips.
+- Improved consistency of hot metal chemistry due to more predictable thermal and chemical profiles.
+
+LIMITATIONS
+- Tm-Ts measured in laboratory SM tests is a simplification; actual in-furnace cohesive zone shape and thickness also depend on burden distribution, layer thickness, and local gas flow patterns that SM tests do not fully replicate.
+- Achieving a narrow Tm-Ts often requires tight control of basicity and burden blend ratios, which can conflict with other objectives such as cost minimization or flexibility in raw material sourcing.
+- Tm-Ts is burden-specific; values cannot be directly compared across plants with different ore/sinter/pellet sources without accounting for differences in gangue composition.
+
+REFERENCES
+Standard blast furnace process textbooks describing cohesive zone shape and its relationship to pressure drop (e.g., Biswas, "Principles of Blast Furnace Ironmaking"); softening-melting test methodology standards (e.g., ISO and JIS test procedures for reduction-under-load testing of iron ore burden materials).

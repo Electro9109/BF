@@ -1,0 +1,35 @@
+TITLE: Pellet Behavior in Blast Furnace Burden
+
+OVERVIEW
+Iron ore pellets are spherical agglomerates (typically 9-16 mm diameter) produced by balling fine iron ore concentrate with a binder and then induration (firing) at high temperature (1250-1350°C) to develop strength. Pellets are a major burden component alongside sinter and lump ore, with typical blast furnace burdens containing anywhere from 10% to over 80% pellets depending on plant strategy and raw material availability. Pellets are valued for their high iron content, uniform size, good cold strength, and good reducibility due to their porous microstructure formed during induration.
+
+KEY MECHANISMS
+The induration process creates a pellet microstructure dominated by hematite (Fe2O3) grains bonded by a slag phase formed from gangue minerals (SiO2, Al2O3) and any added flux (limestone, dolomite, olivine). The porosity developed during firing (typically 20-30% open porosity) is critical: it provides pathways for reducing gas to penetrate the pellet interior, giving pellets generally higher reducibility than sinter or lump ore at equivalent temperatures.
+
+However, this same porous hematite structure is prone to a phenomenon called swelling during reduction. As Fe2O3 reduces to Fe3O4, the crystal structure can undergo anisotropic growth, sometimes producing whisker-like metallic iron structures that cause the pellet to expand significantly (volume increases of 20% or more in severe cases, known as "catastrophic swelling"). Swelling is influenced by pellet chemistry (particularly low basicity, high alkali content, or specific silicate phase distributions) and by reduction conditions (temperature, gas composition, heating rate).
+
+During softening and melting, pellets behave differently from sinter because their slag phase is more concentrated and often more siliceous (especially for "acid" pellets with B2 below 0.5), while fluxed or "olivine" pellets contain MgO-bearing phases that modify melting behavior.
+
+EFFECT ON Ts
+High-pellet burdens tend to have a Ts that depends strongly on pellet basicity. Acid pellets (low CaO/SiO2) develop a silica-rich liquid phase relatively early, which can lower Ts compared to a sinter-dominated burden of higher basicity. Fluxed pellets, with added CaO and MgO, behave more similarly to sinter and can shift Ts higher, closer to sinter-dominated values. Additionally, because pellets typically reduce faster than sinter at a given temperature (due to higher initial porosity), high-pellet burdens often reach a higher metallization degree before softening, which independently tends to raise Ts (see hydrogen_reduction.txt and reducibility discussion).
+
+EFFECT ON Tm
+Pellet-rich burdens with acid (low-basicity) chemistry tend to have a wide range of melting behavior depending on the silica content: very high silica can raise Tm because pure silica-rich glass phases require high temperatures to fully liquefy, while moderate silica with some flux addition can lower Tm by forming low-melting silicate eutectics. Olivine-fluxed pellets, which contain MgO, generally show improved (lower) Tm and reduced swelling compared to acid pellets, because MgO modifies the silicate liquid to lower its viscosity and melting point.
+
+EFFECT ON Tm-Ts
+Experiments containing high pellet proportions have shown mixed but generally favorable Tm-Ts behavior when fluxed/olivine pellets are used: the combination of fast reduction (raising Ts) and improved slag fluidity from MgO/CaO addition (moderating Tm) can produce a relatively narrow Tm-Ts. However, high proportions of acid (unfluxed) pellets, especially when combined with low-basicity sinter, can widen Tm-Ts due to the formation of highly viscous, slow-to-melt silica-rich phases. Pellet swelling, if severe, can also degrade local permeability independently of the Tm-Ts measurement, contributing to pressure-drop problems even when the cohesive zone temperature interval itself is not unusually wide.
+
+ADVANTAGES
+- High iron content reduces slag volume and coke rate per ton of hot metal.
+- Uniform size and shape improve burden distribution control and bed permeability in the granular zone.
+- High porosity gives excellent reducibility, supporting high productivity operation.
+- Fluxed/olivine pellets can be tailored to control swelling and improve cohesive zone behavior.
+
+LIMITATIONS
+- Acid pellets are prone to swelling, which can reduce permeability if not managed through blending or pellet design.
+- High-pellet burdens are more sensitive to reduction-degradation (RDI) issues under certain gas atmospheres.
+- Pellet cost and availability can constrain how much of the burden can realistically be pellets versus sinter and lump ore.
+- The benefits of fast reduction (higher Ts) must be balanced against the thermal and chemical effects on Tm; pellet chemistry must be co-optimized with sinter basicity for the overall burden to achieve a narrow Tm-Ts.
+
+REFERENCES
+Pellet metallurgy literature on induration, swelling mechanisms (e.g., studies on acid vs. fluxed/olivine pellets), and softening-melting comparisons of sinter-only versus high-pellet burden blends under simulated blast furnace conditions.

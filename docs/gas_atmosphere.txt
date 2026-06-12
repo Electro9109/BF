@@ -1,0 +1,35 @@
+TITLE: Reducing Gas Atmosphere Composition (CO, H2, N2, CO2, H2O)
+
+OVERVIEW
+The reducing gas atmosphere refers to the composition of the gas mixture that flows upward through the blast furnace shaft and contacts the descending burden materials. The primary reducing components are carbon monoxide (CO) and hydrogen (H2), with nitrogen (N2) acting as an inert carrier (introduced via the blast air), and carbon dioxide (CO2) and water vapor (H2O) present as the oxidation products of CO and H2 respectively, generated as reduction reactions proceed. In laboratory softening-melting (SM) tests, the gas atmosphere composition (e.g., CO/H2/N2 ratios such as 36% CO, 4% H2, 60% N2 used to simulate a particular furnace zone or operating condition) is a controlled input variable used to study how burden materials behave under representative reducing conditions.
+
+KEY MECHANISMS
+The reducing potential of the gas atmosphere is often expressed via the ratios CO/(CO+CO2) and H2/(H2+H2O), which determine, via the Fe-O and Fe-H-O equilibrium diagrams (Baur-Glaessner type diagrams), whether a given iron oxide phase (Fe2O3, Fe3O4, FeO, Fe) is thermodynamically stable to be reduced further at a given temperature. Higher CO/(CO+CO2) and H2/(H2+H2O) ratios (i.e., gas with higher reducing potential, less "spent") favor more complete reduction.
+
+As gas ascends the furnace and reacts with descending burden, CO is progressively converted to CO2 and H2 to H2O, so the gas becomes progressively less reducing as it moves upward (countercurrent operation) -- though in absolute terms, the gas entering at the bottom (from the raceway) is hottest and most reducing, while gas exiting at the top is coolest and most "spent." The local gas composition at any point in the furnace, combined with local temperature, determines the local reduction equilibrium and kinetics experienced by the burden at that point.
+
+H2 plays a distinct kinetic role beyond its thermodynamic reducing potential: due to its smaller molecular size and higher diffusivity, H2 penetrates burden particle pores and reacts faster than CO at equivalent thermodynamic driving force, meaning that even modest H2 additions (e.g., raising H2 from 0% to 4% of the gas) can measurably accelerate the overall reduction rate, particularly for the rate-limiting FeO-to-Fe step (see hydrogen_reduction.txt and reducibility.txt).
+
+EFFECT ON Ts
+The gas atmosphere composition experienced by a burden sample as it heats up determines its reduction path -- i.e., how much FeO has been converted to Fe by the time the sample reaches softening temperatures. A gas atmosphere with higher reducing potential and/or higher H2 content produces a higher metallization degree at a given temperature, which (as discussed in FeO.txt and hydrogen_reduction.txt) tends to raise Ts by reducing the amount of FeO available to form early fayalite-type liquid.
+
+A less reducing atmosphere (lower CO/(CO+CO2), lower H2, or higher N2 dilution at the same CO+H2) results in slower reduction, more residual FeO at a given temperature, and correspondingly lower Ts.
+
+EFFECT ON Tm
+The gas atmosphere's effect on Tm operates primarily through its influence on the residual FeO content at melting temperatures and, in some cases, through direct gas-slag interactions (e.g., H2O or CO2 in the gas can interact with slag surfaces, though this is a secondary effect compared to bulk reduction progress). As discussed in FeO.txt, the net effect on Tm depends on whether the bulk slag composition at melting is moved closer to or further from a low-melting eutectic by the change in residual FeO. In many studies, gas atmospheres that improve reducibility (higher H2, higher reducing potential) show a modest decrease or negligible change in Tm.
+
+EFFECT ON Tm-Ts
+Because gas atmosphere primarily acts on the system by shifting the reduction path (and hence the FeO/metallization profile as a function of temperature), its effect on Tm-Ts mirrors the combined Ts and Tm effects: more reducing atmospheres (higher H2, higher CO/(CO+CO2)) tend to raise Ts more than they raise (or they may slightly lower) Tm, narrowing Tm-Ts. Less reducing atmospheres (more dilute, more CO2/H2O-laden gas) tend to widen Tm-Ts. This makes gas atmosphere composition -- alongside burden basicity and material selection -- one of the key "control knobs" available for cohesive zone management, particularly relevant to discussions of hydrogen injection strategies.
+
+ADVANTAGES (of a well-managed reducing gas atmosphere)
+- Higher H2 utilization narrows Tm-Ts and improves permeability (see hydrogen_reduction.txt, pressure_drop.txt).
+- Optimized CO utilization (higher CO/(CO+CO2) at a given temperature, i.e., better gas-solid contact and reaction efficiency) reduces fuel consumption per ton of hot metal.
+- Understanding the gas atmosphere's role allows softening-melting tests to be designed to represent specific furnace zones or operating scenarios for predictive purposes.
+
+LIMITATIONS
+- Actual in-furnace gas composition varies continuously with position (height and radius) and time, whereas SM tests use a fixed or simplified gas composition profile; results represent a specific simulated condition, not the full range experienced in practice.
+- Achieving a more reducing atmosphere (e.g., higher H2) in practice requires specific injectants (natural gas, coke oven gas) or process changes that have their own cost, availability, and thermal balance implications (see hydrogen_reduction.txt limitations).
+- Gas atmosphere effects on Ts/Tm/Tm-Ts are intertwined with burden chemistry effects (basicity, FeO, see basicity.txt and FeO.txt); isolating the gas-atmosphere contribution experimentally requires holding burden composition constant.
+
+REFERENCES
+Baur-Glaessner (Fe-O) and Fe-H-O equilibrium diagrams; softening-melting test studies varying CO/H2/N2/CO2/H2O composition at fixed burden chemistry; see also hydrogen_reduction.txt, reducibility.txt, and FeO.txt for related mechanisms.

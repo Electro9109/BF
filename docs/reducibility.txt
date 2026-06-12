@@ -1,0 +1,33 @@
+TITLE: Reducibility of Iron-Bearing Burden Materials
+
+OVERVIEW
+Reducibility is a measure of how readily an iron-bearing material (sinter, pellet, or lump ore) gives up its oxygen when exposed to a reducing gas (CO, H2) at elevated temperature. It is typically quantified in standardized laboratory tests (such as the ISO reducibility test, often reported as RI or R40, the percentage of oxygen removed after a fixed time at a fixed temperature, commonly 900-1000°C under a CO/N2 atmosphere). Reducibility is one of the most important quality parameters for burden materials because it directly determines how much pre-reduction (metallization) is achieved before the material reaches the cohesive zone, which in turn strongly influences Ts, Tm, and Tm-Ts (see softening_melting.txt and cohesive_zone.txt).
+
+KEY MECHANISMS
+Reducibility depends on three main factors: (1) the mineralogical phases present (hematite reduces faster than magnetite, which reduces faster than dense fayalite-bonded structures), (2) the porosity and pore structure (higher open porosity allows faster gas diffusion to internal reaction sites), and (3) particle size (smaller particles have shorter diffusion paths, though this is less relevant for sized burden materials within their normal ranges).
+
+The reduction reactions proceed through the well-known Fe2O3 -> Fe3O4 -> FeO -> Fe sequence (the "wustite step," FeO -> Fe, is generally the slowest and most rate-limiting at blast-furnace-relevant temperatures). Materials with high initial porosity (engineered pellets) or favorable bonding-phase mineralogy (calcium ferrites/SFCA in sinter) tend to have higher reducibility than dense lump ore or fayalite-bonded sinter.
+
+Gas atmosphere strongly modulates the practical reduction rate independent of material reducibility: higher H2 content accelerates reduction kinetics across all material types due to faster gas diffusion (see hydrogen_reduction.txt and gas_atmosphere.txt), while higher CO2/H2O content (lower reducing potential) slows reduction and can even cause re-oxidation if conditions become oxidizing relative to the Fe-FeO-Fe3O4 equilibrium.
+
+EFFECT ON Ts
+Higher reducibility, all else equal, leads to a higher metallization degree by the time the material reaches softening temperatures. Since metallic iron has a much higher melting point than FeO-silicate liquid phases, a higher metallization degree means less FeO is available to form early liquid, which raises Ts. Materials or conditions that improve reducibility (high porosity pellets, calcium-ferrite-rich sinter, H2-enriched gas) therefore tend to push Ts higher.
+
+EFFECT ON Tm
+The relationship between reducibility and Tm is less direct and more dependent on the resulting slag chemistry once melting does occur. In general, higher reducibility reduces the total FeO available to participate in slag formation at the point of melting, which can shift the effective slag basicity (since FeO is itself a basic oxide in silicate systems) and alter Tm depending on whether the remaining slag composition moves toward or away from a eutectic. In many cases, higher reducibility correlates with a slight reduction in Tm because less FeO-rich, more homogeneous residual slag forms and melts more readily.
+
+EFFECT ON Tm-Ts
+Because higher reducibility tends to raise Ts while having a smaller or sometimes opposite effect on Tm, improved reducibility generally narrows Tm-Ts. This is one of the central reasons why pellet reducibility, sinter SFCA content, and reducing gas H2 enrichment are all studied as levers for cohesive zone control: each, through different mechanisms, increases the pre-melting metallization degree and thereby compresses the softening-melting interval.
+
+ADVANTAGES
+- Higher reducibility burdens narrow Tm-Ts, improving permeability (see cohesive_zone.txt).
+- Higher reducibility reduces the reducing-gas (and therefore fuel) requirement to achieve a target metallization degree, improving fuel efficiency.
+- Reducibility is a measurable, comparable quality metric that can be used in burden selection and blending decisions.
+
+LIMITATIONS
+- Standard reducibility tests (e.g., at 900°C, isothermal, fixed gas composition) do not fully replicate the continuously changing temperature and gas composition profile inside an actual blast furnace, so RI/R40 values are comparative indicators rather than direct predictors of in-furnace metallization.
+- Very high reducibility combined with certain mineralogies (some pellets) can increase susceptibility to swelling or reduction degradation (RDI), which can negatively affect permeability through mechanisms unrelated to Tm-Ts.
+- Reducibility improvements often require trade-offs with mechanical strength (e.g., higher porosity pellets/sinter can be more friable).
+
+REFERENCES
+ISO and JIS reducibility test standards; comparative reducibility studies across sinter, pellet, and lump ore; studies linking reducibility/metallization degree to softening-melting test outcomes (Ts, Tm, Tm-Ts).

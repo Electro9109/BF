@@ -1,0 +1,62 @@
+TITLE: Tm-Ts (Cohesive Zone Width) - Synthesis and Summary
+
+OVERVIEW
+Tm-Ts is the difference between the melting/dropping temperature (Tm) and the softening start temperature (Ts) of a burden material, measured under simulated blast furnace load and reducing gas conditions. It is the single quantitative output that summarizes how a burden material will behave in the cohesive zone of the blast furnace, and it is influenced -- directly or indirectly -- by essentially every other factor discussed in this knowledge base. This document acts as a synthesis, summarizing how each factor pushes Tm-Ts wider or narrower, and is intended as the starting point for explaining a predicted Tm-Ts value in terms of underlying causes.
+
+KEY MECHANISMS
+Tm-Ts arises from the interplay of two physical endpoints:
+
+- Ts (softening start): governed by the temperature at which the first liquid slag phase appears, which depends primarily on residual FeO content and overall slag composition relative to low-melting eutectics (see FeO.txt, slag_formation.txt).
+- Tm (melting/dropping): governed by the temperature at which the bulk composition becomes fully liquid (plus any remaining metallic iron), which depends on how far the bulk composition is from the initial eutectic and how much additional oxide must dissolve into the liquid as temperature rises (see slag_formation.txt).
+
+A narrow Tm-Ts results when the bulk composition is close to the initial melting eutectic (small "compositional distance" between Ts and Tm conditions). A wide Tm-Ts results when there is a large compositional distance -- for example, when the first liquid forms from a small, FeO-rich fraction of the material (low Ts) but the bulk material is silica-rich and requires much higher temperatures to fully dissolve (high Tm).
+
+SUMMARY OF FACTOR EFFECTS ON Tm-Ts
+
+Basicity (CaO/SiO2, see basicity.txt):
+- Intermediate basicity (~1.6-1.9) generally minimizes Tm-Ts by bringing the bulk composition close to a eutectic.
+- Both very low basicity (acidic, silica-rich) and very high basicity (excess unreacted CaO) tend to widen Tm-Ts.
+
+Hydrogen / gas atmosphere (see hydrogen_reduction.txt, gas_atmosphere.txt):
+- Higher H2 content and higher overall reducing potential increase pre-melting metallization, raising Ts more than Tm, narrowing Tm-Ts.
+- Less reducing atmospheres widen Tm-Ts.
+
+Reducibility (see reducibility.txt):
+- Higher reducibility (porous pellets, calcium-ferrite-rich sinter) raises Ts via higher metallization, narrowing Tm-Ts.
+- Lower reducibility (dense lump ore) leaves more residual FeO, lowering Ts and tending to widen Tm-Ts.
+
+FeO content (see FeO.txt):
+- High residual FeO at softening temperatures lowers Ts (early fayalite liquid).
+- If this FeO is then consumed by reduction before melting, the resulting more refractory residual slag can raise Tm, widening Tm-Ts.
+
+Burden type - sinter vs pellet vs ore (see sinter.txt, pellet.txt, ore.txt):
+- Sinter at optimum basicity tends to give relatively narrow Tm-Ts (130-180°C typical).
+- Fluxed/olivine pellets can also give narrow Tm-Ts; acid (unfluxed) pellets tend to widen it.
+- Lump ore additions (low gangue, low reducibility) tend to widen Tm-Ts unless balanced by sufficient flux from other burden components.
+
+Slag formation pathway (see slag_formation.txt):
+- The fundamental driver: Tm-Ts reflects how much additional oxide must dissolve into the initial liquid between Ts and Tm. All the above factors act by changing either the initial eutectic composition reached, the bulk composition, or both.
+
+CONSEQUENCES OF Tm-Ts (see cohesive_zone.txt, permeability.txt, pressure_drop.txt)
+- Tm-Ts directly determines the thickness of the low-permeability cohesive layer.
+- A narrow Tm-Ts reduces overall furnace pressure drop (often the largest single contributor), enabling higher productivity and improved operational stability.
+- A wide Tm-Ts increases pressure drop, increases the risk of gas channeling, hanging, and slips, and can limit achievable blast volume.
+
+INTERPRETING A PREDICTED Tm-Ts VALUE
+When a model predicts a Tm-Ts value for a given set of input conditions (gas composition, burden composition, chemistry), the explanation should generally consider:
+
+1. Basicity of the burden -- is it close to, above, or below the ~1.6-1.9 optimum range?
+2. H2 / reducing gas composition -- is the atmosphere strongly reducing (favoring high metallization, higher Ts) or relatively mild?
+3. Burden type proportions -- is the burden sinter-dominant, pellet-dominant (acid or fluxed), or has significant lump ore?
+4. FeO level implied by the chemistry -- does the composition suggest a large residual FeO fraction (low Ts, possible wide Tm-Ts) or a well-reduced, low-FeO state?
+
+A high predicted Tm-Ts (e.g., above ~180-200°C) generally points toward some combination of: low/high basicity away from optimum, low H2/reducing potential, high lump ore or acid pellet proportion, or a mismatch between reduction progress and slag chemistry (high FeO at Ts but refractory residual slag at Tm).
+
+A low predicted Tm-Ts (e.g., below ~150°C) generally points toward: basicity near the eutectic optimum, adequate H2/reducing potential, sinter-dominant or fluxed-pellet-dominant burden with good reducibility, and a slag chemistry that remains close to a single eutectic region throughout the softening-melting transition.
+
+LIMITATIONS
+- Tm-Ts is the result of multiple interacting factors; in practice, two different combinations of conditions can produce similar Tm-Ts values through different mechanisms (e.g., a low-basicity/high-H2 case versus a near-optimum-basicity/moderate-H2 case might both yield a moderate Tm-Ts). Explanations should be framed as "contributing factors consistent with this prediction" rather than a single deterministic cause, unless one factor is clearly dominant (e.g., basicity far outside the normal range).
+- This synthesis reflects general trends from softening-melting literature; specific numerical thresholds (e.g., "1.6-1.9 basicity," "180°C wide") are typical/representative ranges and may shift for specific ore/sinter/pellet sources with unusual gangue compositions.
+
+REFERENCES
+See basicity.txt, hydrogen_reduction.txt, reducibility.txt, FeO.txt, sinter.txt, pellet.txt, ore.txt, slag_formation.txt, cohesive_zone.txt, permeability.txt, pressure_drop.txt, and gas_atmosphere.txt for the detailed factor-specific discussions summarized here.

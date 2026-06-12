@@ -1,0 +1,48 @@
+TITLE: Basicity in Blast Furnace and Sintering Operations
+
+OVERVIEW
+Basicity is a ratio used to describe the chemical balance between basic oxides and acidic oxides in a slag, sinter, or burden mixture. It is one of the most widely used quality control parameters in iron and steel making because it strongly influences slag behavior, melting characteristics, and the softening-melting (cohesive zone) properties of the burden inside a blast furnace.
+
+The most common definition is the binary basicity, B2:
+
+B2 = %CaO / %SiO2
+
+A more complete form, the quaternary basicity, B4, accounts for additional flux and acid oxides:
+
+B4 = (%CaO + %MgO) / (%SiO2 + %Al2O3)
+
+Typical sinter basicity (B2) for blast furnace operation ranges from 1.6 to 2.2, though this varies by plant practice, ore composition, and target hot metal chemistry. Pellets are often produced at lower basicity (around 0.3 to 1.0, sometimes "acid" or "self-fluxing") depending on plant strategy.
+
+KEY MECHANISMS
+Basicity governs the formation temperature and viscosity of liquid slag phases. CaO and MgO are basic oxides that combine with acidic oxides (SiO2, Al2O3) to form low-melting-point silicate and aluminosilicate phases such as calcium silicates (2CaO.SiO2, CaO.SiO2) and melilite solid solutions. The ratio of basic to acidic oxides determines:
+
+- The temperature at which the first liquid phase appears (onset of softening)
+- The temperature range over which the burden transitions from solid to fully liquid (the softening-melting interval)
+- The viscosity and fluidity of the resulting slag
+- The sulfur partitioning behavior (higher basicity generally improves desulfurization)
+
+At low basicity, silica-rich liquid phases form early but are highly viscous, leading to a wide softening-melting range. At very high basicity, excess free CaO can remain unreacted, also widening the softening range because the system requires higher temperatures to fully homogenize.
+
+EFFECT ON Ts
+Ts (softening start temperature) is the temperature at which the burden material first begins to deform under load due to the appearance of liquid phases at grain boundaries. Increasing basicity from a low value (around 1.0) toward an intermediate value (around 1.6-1.8) generally raises Ts slightly, because more CaO is available to react with SiO2 at a higher temperature before significant liquid forms. However, very high basicity (above approximately 2.2) can lower Ts again in some systems because highly basic calcium ferrite phases melt at lower temperatures than calcium silicates.
+
+EFFECT ON Tm
+Tm (melting end temperature, sometimes called the dropping temperature) is the temperature at which the burden has become fully liquid and begins to drip through the coke bed. Basicity has a strong effect on Tm: at intermediate basicity (1.6-2.0), Tm tends to be minimized because the slag composition is closer to a eutectic, allowing complete melting at a lower temperature. Both very low basicity (silica-rich, viscous) and very high basicity (excess unreacted CaO requiring more heat to dissolve) tend to increase Tm.
+
+EFFECT ON Tm-Ts
+Tm-Ts represents the width of the cohesive zone, i.e., the temperature interval over which the burden is in a mixed solid-liquid state with reduced gas permeability. A narrow Tm-Ts is generally desirable because it produces a thinner cohesive zone, improving gas flow and reducing pressure drop. Basicity in the range of approximately 1.6 to 1.9 typically produces the narrowest Tm-Ts intervals for many sinter-pellet-ore burden combinations, because the slag composition is close to eutectic and transitions from softening to full melting over a short temperature range. Operating significantly away from this optimum (either too acidic or too basic) tends to widen Tm-Ts.
+
+ADVANTAGES
+- Higher basicity (within the optimum range) improves desulfurization by forming stable CaS in the slag.
+- Properly tuned basicity narrows the cohesive zone, improving permeability and reducing fuel rate.
+- Basicity control allows blending of different ore and flux sources while maintaining consistent slag chemistry.
+- Higher basicity slags generally have better fluidity at tap temperatures, easing slag-metal separation.
+
+LIMITATIONS
+- Excess basicity increases lime consumption and can raise slag volume, increasing fuel requirements.
+- Very high basicity sinters can become friable (low strength), increasing fines generation and degrading bed permeability.
+- Basicity alone does not capture the full slag chemistry; Al2O3 and MgO content significantly modify the actual melting behavior, which is why B4 or full slag viscosity models are often used in practice.
+- The optimum basicity range is burden-specific; a basicity that minimizes Tm-Ts for one ore/pellet/sinter blend may not be optimal for another blend with different gangue composition.
+
+REFERENCES
+General blast furnace ironmaking textbooks (e.g., Biswas, "Principles of Blast Furnace Ironmaking") and standard plant operating practice guidelines on sinter and pellet basicity control. Cohesive zone behavior as a function of basicity has been studied extensively in softening-melting (SM) test rigs under simulated blast furnace load and reducing gas conditions.

@@ -1,0 +1,41 @@
+TITLE: Hydrogen Reduction in Blast Furnace and Direct Reduction Processes
+
+OVERVIEW
+Hydrogen (H2) acts as a reducing agent for iron oxides alongside carbon monoxide (CO). In conventional blast furnaces, hydrogen is generated in situ from moisture in the blast, from hydrocarbons in injected fuels (such as pulverized coal, natural gas, or coke oven gas), and from coke volatile matter. In hydrogen-enriched or hydrogen-based operations (including experimental blast furnace injection trials and direct reduction processes), H2 content in the reducing gas can be deliberately increased, for example to levels around 4% or higher in blast furnace shaft gas, or much higher (50-100%) in dedicated H2-DRI processes.
+
+The overall reduction reactions for hydrogen are:
+
+3 Fe2O3 + H2 -> 2 Fe3O4 + H2O
+Fe3O4 + H2 -> 3 FeO + H2O
+FeO + H2 -> Fe + H2O
+
+These mirror the corresponding CO reduction reactions but differ significantly in thermodynamics and kinetics.
+
+KEY MECHANISMS
+Hydrogen reduction is endothermic (absorbs heat), whereas CO reduction of FeO to Fe is mildly exothermic. This means increasing H2 utilization shifts the thermal balance of the furnace, requiring adjustments to fuel rate and burden distribution to maintain the desired temperature profile.
+
+Kinetically, H2 molecules are smaller and diffuse faster than CO through the pore structure of iron ore, sinter, and pellets. This results in faster reduction rates, particularly in the wustite (FeO) to metallic iron (Fe) stage, which is often the rate-limiting step in CO-only systems. Faster and more uniform reduction before the burden enters the cohesive zone means that by the time the material reaches softening temperatures, it has a higher metallization degree and a different pore/oxide structure than material reduced under CO alone.
+
+EFFECT ON Ts
+Increased hydrogen content in the reducing gas generally increases the degree of pre-reduction (metallization) achieved before the burden reaches the softening temperature range. Highly metallized material (more metallic Fe, less FeO) tends to soften at a higher temperature than less-reduced material, because metallic iron has a much higher melting point (1538°C) than the FeO-silicate liquid phases that drive early softening. Therefore, higher H2 utilization tends to raise Ts, delaying the onset of softening.
+
+EFFECT ON Tm
+The effect of hydrogen on Tm is more complex. On one hand, higher metallization reduces the amount of FeO available to form low-melting silicate liquids, which can raise Tm slightly. On the other hand, improved reduction kinetics produce a more porous, less glassy iron oxide matrix, which can promote more uniform and complete melting once liquid phases do form, potentially lowering Tm in some cases. In most reported experimental softening-melting tests, the dominant effect is a modest reduction in Tm or little change, because the overall reduction degree at the point of melting is the primary driver, and well-reduced burdens tend to collapse and melt over a narrower range once the remaining oxide does liquefy.
+
+EFFECT ON Tm-Ts
+The combined effect of a higher Ts and a stable or slightly lower Tm is a narrower Tm-Ts interval. Experiments containing elevated H2 (compared to baseline CO/N2 atmospheres) generally showed lower Ts-to-Tm spread, improved overall reducibility, and a reduced cohesive-zone width. Reported average Tm-Ts values under hydrogen-enriched conditions are often on the order of 130-150°C, compared to wider intervals (180-220°C or more) under low-hydrogen, CO-dominated conditions for the same burden composition. This narrowing is one of the key motivations for hydrogen injection strategies aimed at improving furnace permeability.
+
+ADVANTAGES
+- Faster reduction kinetics reduce the residence time needed to reach a target metallization degree.
+- Narrower cohesive zone (lower Tm-Ts) improves gas permeability and can reduce pressure drop across the furnace.
+- Higher H2 utilization can reduce overall carbon consumption and associated CO2 emissions per ton of hot metal, an important driver for "hydrogen blast furnace" research.
+- Improved reducibility can partially compensate for lower-quality burden materials (higher gangue content).
+
+LIMITATIONS
+- The endothermic nature of H2 reduction increases the heat demand in the thermal reserve zone, requiring careful adjustment of fuel rate, blast temperature, or auxiliary heating to avoid cooling the furnace.
+- High H2 partial pressures combined with certain ore mineralogies can promote excessive swelling or decrepitation of pellets during reduction, which can negatively affect bed permeability if not controlled.
+- Practical H2 enrichment in conventional blast furnaces is limited by hydrogen source availability (natural gas injection, coke oven gas) and by the need to maintain raceway flame temperature.
+- Most large-scale experimental data exists for moderate H2 levels (a few percent in shaft gas); behavior at very high H2 fractions is mostly characterized in dedicated DRI/shaft furnace contexts rather than conventional blast furnaces.
+
+REFERENCES
+Softening-melting test studies comparing CO/N2 and CO/H2/N2 atmospheres at fixed CO equivalents; hydrogen blast furnace research programs (e.g., COURSE50, HYBRIT-related shaft studies) reporting reduction degree, Ts, Tm, and pressure-drop trends as functions of H2 content in the reducing gas.

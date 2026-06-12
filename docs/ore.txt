@@ -1,0 +1,33 @@
+TITLE: Lump Ore in Blast Furnace Burden
+
+OVERVIEW
+Lump ore (also called direct shipping ore, DSO, or simply "ore" in burden composition discussions) refers to naturally occurring iron ore that is mined, crushed, and screened to a size suitable for direct charging into the blast furnace (typically 6-30 mm) without further agglomeration (no sintering or pelletizing). It represents the "as-mined" component of the burden, distinct from the manufactured agglomerates sinter and pellet. Lump ore proportions in modern blast furnace burdens vary widely, from near zero in plants using only sinter and pellet, up to 20-30% or more in plants with access to high-quality lump ore deposits (notably hematite lump ores from Australia and Brazil).
+
+KEY MECHANISMS
+Because lump ore is not thermally processed before charging, its mineralogy reflects the natural ore body: predominantly hematite (Fe2O3), sometimes with goethite (FeO.OH) content that decomposes and releases combined water during heating in the furnace stack. Lump ore typically has natural porosity from the original rock structure, but this porosity and pore structure is far less uniform than the engineered porosity of pellets, leading to more variable reduction behavior between particles and even within a single piece of ore (reduction proceeds faster near natural cracks and pore channels).
+
+Gangue content (SiO2, Al2O3) and its distribution within the ore matrix is fixed by the deposit and cannot be adjusted by the plant the way sinter basicity can. High-grade lump ores (TFe above ~62-64%) have correspondingly low gangue content, meaning lump ore additions to the burden tend to dilute the overall slag volume rather than significantly shift basicity, unless the ore has unusually high or low intrinsic SiO2/Al2O3.
+
+EFFECT ON Ts
+Lump ore generally reduces more slowly than sinter or pellet at a given temperature, due to lower and less uniform porosity. This typically results in a lower degree of pre-reduction (more residual FeO) by the time lump-ore-rich layers reach the cohesive zone, which tends to lower Ts compared to a sinter- or pellet-rich layer at the same furnace position, because more FeO is available to form early fayalite-type liquid phases. Some high-density, low-porosity lump ores can also soften over a less distinct temperature range (more gradual softening), making Ts determination less sharp in laboratory tests.
+
+EFFECT ON Tm
+Because lump ore typically has low gangue content (high TFe, low SiO2/Al2O3), the small amount of slag formed from lump ore gangue alone tends to be either very silica-rich (if the ore is acidic) or negligible in volume. In burden blends, lump ore's effect on Tm is often more about dilution: adding lump ore to a sinter-dominated burden can shift the bulk basicity of the combined slag (since lump ore contributes little CaO), generally lowering bulk basicity and potentially raising Tm if the blend basicity moves away from the eutectic optimum (see basicity.txt).
+
+EFFECT ON Tm-Ts
+The combination of lower Ts (from lower pre-reduction/metallization) and potentially higher Tm (from basicity dilution effects) means lump ore additions, especially in significant proportions, tend to widen Tm-Ts compared to sinter-only or well-fluxed pellet-sinter blends. However, high-quality lump ores with good natural reducibility (high porosity, low combined water) can partially offset this by achieving reduction degrees closer to sinter, narrowing the gap. The net effect is highly ore-source-dependent, which is why lump ore proportion is often treated as a tunable but carefully monitored variable in burden design.
+
+ADVANTAGES
+- Lower cost per ton of contained iron in many cases, since no agglomeration energy/cost is required.
+- High TFe content reduces overall slag volume in the burden.
+- Provides burden flexibility and can buffer against sinter or pellet supply constraints.
+- Some lump ores have favorable mechanical strength, contributing to overall burden stability.
+
+LIMITATIONS
+- Lower and less controllable reducibility compared to sinter/pellet.
+- No basicity control -- gangue chemistry is fixed by the ore source.
+- Can widen Tm-Ts if not balanced with sufficient flux from sinter or fluxed pellets in the blend.
+- Goethitic ores release significant combined water on heating, which affects the thermal balance and can cause additional degradation (decrepitation) during heating.
+
+REFERENCES
+Comparative burden studies evaluating lump ore proportion versus cohesive zone width and furnace permeability; mineralogical characterization studies of major lump ore deposits (hematite vs. goethitic/pisolitic ores) and their reduction behavior.

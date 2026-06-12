@@ -1,0 +1,39 @@
+TITLE: Slag Formation During Burden Softening and Melting
+
+OVERVIEW
+Slag formation refers to the process by which the non-metallic oxide components of the burden -- primarily SiO2, Al2O3, CaO, MgO, and FeO -- combine to form liquid silicate phases as temperature increases during the descent of burden material through the blast furnace shaft. The composition, quantity, and melting behavior of these liquid phases are the direct physical cause of the softening (Ts) and melting (Tm) phenomena measured in softening-melting tests, making slag formation the central chemical process underlying cohesive zone behavior (see cohesive_zone.txt and softening_melting.txt).
+
+KEY MECHANISMS
+The relevant chemical system is often approximated as the five-component system CaO-SiO2-Al2O3-MgO-FeO (sometimes called the "CSAMF" system in ironmaking literature). At blast furnace temperatures (1100-1500°C), various combinations of these oxides form eutectic mixtures with melting points well below those of the pure oxides themselves (pure SiO2 melts at ~1713°C, pure CaO at ~2572°C, but certain CaO-SiO2-FeO mixtures melt below 1200°C).
+
+Slag formation proceeds in stages as temperature rises:
+
+1. Initial liquid formation: The lowest-melting eutectic compositions present in the local mixture begin to melt first. In FeO-rich, low-basicity environments, this is often a fayalite-type (FeO-SiO2) liquid (see FeO.txt). In higher-basicity environments, calcium-iron silicate or calcium ferrite eutectics may form first.
+
+2. Liquid growth and dissolution: As temperature increases, the initial liquid dissolves additional solid oxide phases (more SiO2, Al2O3, CaO, MgO, or remaining FeO), changing its composition and typically increasing its volume. The rate and extent of this dissolution depends on diffusion rates and the temperature gradient above the initial melting point.
+
+3. Homogenization and full melting: At sufficiently high temperature, the liquid phase has dissolved essentially all available oxide components (apart from any remaining metallic iron, which has a much higher melting point and remains solid/forms a separate metallic phase), and the sample becomes predominantly liquid -- this corresponds to Tm.
+
+The basicity (CaO/SiO2, see basicity.txt) and the presence of MgO and Al2O3 shift the position of these eutectics within the CSAMF system, which is why basicity is such a strong lever for both Ts and Tm.
+
+EFFECT ON Ts
+Ts corresponds to the onset of stage 1 above -- the appearance of the first liquid phase. The temperature at which this occurs depends on which eutectic composition is "closest" to the local bulk composition of the sample at the relevant point in its reduction path. Compositions close to a low-melting eutectic (e.g., FeO-SiO2 fayalite eutectic in low-basicity, high-FeO material) will show low Ts. Compositions further from any low-melting eutectic (e.g., highly metallized material with little FeO, or highly basic material where the first eutectic involves calcium ferrites that may melt at higher temperatures) will show higher Ts.
+
+EFFECT ON Tm
+Tm corresponds to the completion of stage 3 -- full homogenization into a single liquid (plus any remaining metallic iron). This depends on how much solid oxide material must be dissolved into the initial liquid, and how far the bulk composition is from the initial eutectic. If the bulk composition is itself close to a eutectic (small compositional "distance" to travel), Tm will be close to Ts (narrow interval). If the bulk composition is far from the initial eutectic (e.g., a silica-rich bulk composition where only a small fayalite-type liquid forms initially, but a large amount of additional SiO2 must subsequently dissolve), Tm will be much higher than Ts (wide interval).
+
+EFFECT ON Tm-Ts
+Tm-Ts is therefore fundamentally a measure of the "compositional distance" between the initial melting eutectic and the final bulk (or near-final, accounting for ongoing reduction) composition of the sample. Burden design strategies that aim to narrow Tm-Ts (appropriate basicity, MgO addition via olivine/dolomite, balanced FeO/reduction progress) all work by bringing the bulk composition closer to a single eutectic region in the CSAMF system, so that the transition from "first liquid" to "fully liquid" requires a smaller temperature increase.
+
+ADVANTAGES (of understanding slag formation pathways)
+- Provides the mechanistic basis for basicity and flux (CaO, MgO) optimization strategies.
+- Explains why burden blends (sinter + pellet + ore) can have non-additive Tm-Ts behavior -- the combined bulk composition may fall in a different region of the CSAMF phase diagram than any single component.
+- Supports thermodynamic modeling (phase diagram / CALPHAD-type approaches) for predicting Ts and Tm from composition.
+
+LIMITATIONS
+- Real burden materials are heterogeneous at the particle and even sub-particle scale; local compositions can differ significantly from bulk chemical analysis, leading to a range of local melting onsets rather than a single sharp Ts.
+- Minor and trace components (alkalis Na2O/K2O, MnO, P2O5, TiO2) can shift eutectic positions and are often not included in simplified five-component (CSAMF) models, but can be significant in practice.
+- Reaction kinetics (dissolution rates) mean that true equilibrium phase diagrams provide an idealized lower bound on Tm; actual Tm in a finite-time test can be higher than the equilibrium full-liquidus temperature if dissolution is incomplete.
+
+REFERENCES
+CaO-SiO2-Al2O3-MgO-FeO phase equilibrium diagrams and slag viscosity models used in ironmaking; see also basicity.txt, FeO.txt, and softening_melting.txt for related discussion of how these phase relationships manifest as Ts and Tm.
