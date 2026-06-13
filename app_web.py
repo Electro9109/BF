@@ -11,7 +11,26 @@ This file is a thin UI layer.
   - Prediction logic lives in ml/predictor.py
 """
 
+# ── Suppress harmless WinError 10054 asyncio noise (Windows ProactorEventLoop) ──
+import sys, asyncio, logging
+
+if sys.platform == "win32":
+    _orig_exc_handler = asyncio.BaseEventLoop.call_exception_handler.__func__ \
+        if hasattr(asyncio.BaseEventLoop.call_exception_handler, "__func__") else None
+
+    def _quiet_exception_handler(self, ctx):
+        exc = ctx.get("exception")
+        if isinstance(exc, ConnectionResetError) and getattr(exc, "winerror", None) == 10054:
+            return   # swallow the WinError 10054 noise
+        if _orig_exc_handler:
+            _orig_exc_handler(self, ctx)
+        else:
+            self.default_exception_handler(ctx)
+
+    asyncio.BaseEventLoop.call_exception_handler = _quiet_exception_handler
+
 import streamlit as st
+
 
 st.set_page_config(
     page_title="Metallurgical RAG + Predictor",
