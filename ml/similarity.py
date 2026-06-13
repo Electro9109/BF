@@ -1,29 +1,57 @@
 """
 ml/similarity.py
 ───────────────────
-Finds the nearest historical experiments (from SMRF.csv) to a given
-feature set, using cosine similarity over the ML_FEATURES.
+Nearest-neighbour utilities for the ML predictor.
 
-Used by pipeline/hybrid_pipeline.py to ground the LLM explanation in real
-prior trials ("compare to nearest experiment row 23, which had ...").
+  nearest_neighbor_distance(query_row)
+      Returns the minimum Euclidean distance from the scaled query feature
+      row to the scaled training set — used to estimate prediction confidence.
+
+  find_nearest_experiments(features, k)
+      Returns the k most similar historical rows based on cosine similarity.
+      Requires EXPERIMENTS_CSV to be configured; used by hybrid_pipeline.
 """
 
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import StandardScaler
-
-from config.models import ML_FEATURES, ML_TARGET
-from data.experiments_loader import load_experiments_df
 
 
-def find_nearest_experiments(features: dict, k: int = 3) -> list[dict]:
+def nearest_neighbor_distance(query_scaled: np.ndarray) -> float:
+    """
+    Compute the minimum Euclidean distance from a scaled query row to
+    the scaled training set features.
+
+    Parameters
+    ----------
+    query_scaled : np.ndarray, shape (1, n_features)
+        Feature row already scaled by the same scalers used in training.
+
+    Returns
+    -------
+    float  — minimum Euclidean distance; smaller == closer to training data.
+    """
+    from ml.feature_processing import load_and_build
+    res = load_and_build()
+    X = res["X"]   # shape (n_samples, n_features), already scaled
+    dists = np.linalg.norm(X - query_scaled, axis=1)
+    return float(np.min(dists))
+
+
+def find_nearest_experiments(features: dict, k: int = 3) -> list:
     """
     Return the k most similar historical experiment rows to `features`,
-    based on cosine similarity over standardized ML_FEATURES.
+    based on cosine similarity over standardised ML_FEATURES.
 
     Each result dict contains the original experiment's feature values,
-    its ML_TARGET value, its 1-based row_index, and a "similarity" score.
+    its ML_TARGET value, its 1-based row_index, and a 'similarity' score.
+
+    NOTE: requires config.models.ML_FEATURES / ML_TARGET and
+    data.experiments_loader.load_experiments_df to be available.
     """
+    from sklearn.preprocessing import StandardScaler
+    from config.models import ML_FEATURES, ML_TARGET
+    from data.experiments_loader import load_experiments_df
+
     df = load_experiments_df()
     target_col = ML_TARGET.replace("-", "_")
 
@@ -50,3 +78,4 @@ def find_nearest_experiments(features: dict, k: int = 3) -> list[dict]:
         results.append(entry)
 
     return results
+

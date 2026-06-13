@@ -41,6 +41,7 @@ class PredictionResult:
     feature_vector: Optional[list] = None   # for similarity search
     similar_experiments: list = field(default_factory=list)   # stub
     summary: str = ""              # human-readable for RAG handoff
+    parser_warnings: list = field(default_factory=list)  # Phase-2 warnings
 
     def to_rag_query(self) -> str:
         """
@@ -102,6 +103,9 @@ class PredictionPipeline:
         test_condition: str = None,
         burden: str = None,
         test_type: str = None,
+        condition_text: str = None,
+        tokenizer = None,
+        model = None,
     ) -> PredictionResult:
         """
         Run the full prediction pipeline.
@@ -112,17 +116,41 @@ class PredictionPipeline:
         test_condition : gas atmosphere string
         burden         : burden composition string
         test_type      : 'SO', 'SOP', or 'P'
+        condition_text : natural language description of experiment conditions
+        tokenizer      : LLM tokenizer
+        model          : LLM model
 
         Returns
         -------
         PredictionResult
         """
+        parsed_condition = None
+        if condition_text and tokenizer and model:
+            from ml.condition_parser import parse_condition_nl
+            parsed_condition = parse_condition_nl(condition_text, tokenizer, model)
+            
+            # Populate text descriptions for reporting
+            test_condition = f"CO={parsed_condition.get('CO_pct', 0.0)}%, H2={parsed_condition.get('H2_pct', 0.0)}%, N2={parsed_condition.get('N2_pct', 0.0)}%"
+            
+            b_parts = []
+            if parsed_condition.get("sinter_pct", 0.0) > 0:
+                b_parts.append(f"Sinter-{parsed_condition['sinter_pct']}%")
+            if parsed_condition.get("ore_pct", 0.0) > 0:
+                b_parts.append(f"Ore-{parsed_condition['ore_pct']}%")
+            if parsed_condition.get("pellet_pct", 0.0) > 0:
+                b_parts.append(f"Pellet-{parsed_condition['pellet_pct']}%")
+            if parsed_condition.get("other_pct", 0.0) > 0:
+                b_parts.append(f"Other-{parsed_condition['other_pct']}%")
+            burden = "+".join(b_parts) if b_parts else "N/A"
+            test_type = parsed_condition.get("test_type", "SO")
+
         # ── Step 1: Predict ──────────────────────────────────────────────
         predictions = self.predictor.predict(
             chemistry=chemistry,
             test_condition=test_condition,
             burden=burden,
             test_type=test_type,
+            parsed_condition=parsed_condition,
         )
 
         # ── Step 2: Similarity (stub) ────────────────────────────────────
@@ -142,15 +170,19 @@ class PredictionPipeline:
             "test_condition": test_condition,
             "burden": burden,
             "test_type": test_type,
+            "condition_text": condition_text,
+            "parsed_condition": parsed_condition,
         }
 
         summary = self._build_summary(predictions, inputs, similar)
+        parser_warnings = parsed_condition.get("warnings", []) if parsed_condition else []
 
         return PredictionResult(
             predictions=predictions,
             inputs=inputs,
             similar_experiments=similar,
             summary=summary,
+            parser_warnings=parser_warnings,
         )
 
     def _build_summary(

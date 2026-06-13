@@ -185,6 +185,47 @@ hr { border-color: #1e2230 !important; }
     color: #b0b8cc;
     white-space: pre-wrap;
 }
+/* ── Confidence badge ───────────────────────────── */
+.conf-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    margin-top: 8px;
+}
+.conf-badge.high   { background: rgba(16,185,129,0.12); color:#34d399; border:1px solid rgba(16,185,129,0.25); }
+.conf-badge.medium { background: rgba(245,158,11,0.12);  color:#fbbf24; border:1px solid rgba(245,158,11,0.25); }
+.conf-badge.low    { background: rgba(239,68,68,0.12);   color:#f87171; border:1px solid rgba(239,68,68,0.25);  }
+
+/* ── Warning chips ──────────────────────────────── */
+.warn-chip {
+    background: rgba(245,158,11,0.08);
+    border: 1px solid rgba(245,158,11,0.22);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    color: #fbbf24;
+    margin-bottom: 6px;
+}
+
+/* ── History row ────────────────────────────────── */
+.hist-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 14px;
+    background: #12141c;
+    border: 1px solid #1e2230;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 0.83rem;
+    color: #b0b8cc;
+}
+.hist-row .val { color: #e0e0e0; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -225,10 +266,12 @@ def init_session():
         "engine_error":       None,
         "loaded_fingerprint": None,
         "pred_results":       None,
+        "pred_history":       [],   # list of recent prediction dicts
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
 
 init_session()
 
@@ -495,6 +538,27 @@ with tab_pred:
                     basicity = st.number_input("Basicity (CaO/SiO₂)", value=1.638, format="%.3f", step=0.01)
 
                 st.markdown("---")
+                st.markdown("**Gas Atmosphere & Burden Mix**")
+                
+                input_mode = st.radio("Condition Input Mode", ["Describe in plain English", "Manual Strings"], index=0)
+                
+                cond_text = ""
+                test_condition = ""
+                burden = ""
+                test_type = "SO"
+                
+                if input_mode == "Describe in plain English":
+                    cond_text = st.text_area(
+                        "Describe conditions",
+                        placeholder="e.g. CO=40%, H2=8%, N2=52%. Burden composition is 70% Sinter and 30% Ore.",
+                        value="CO=40%, N2=60%. Burden is 100% sinter."
+                    )
+                else:
+                    test_condition = st.text_input("Atmosphere String", value="CO= 40% & N2=60%")
+                    burden = st.text_input("Burden String", value="S1-70%+O1-30%")
+                    test_type = st.selectbox("Test Type", ["SO", "SOP", "P"], index=0)
+
+                st.markdown("---")
 
                 model_choice = st.selectbox(
                     "Model",
@@ -530,15 +594,45 @@ with tab_pred:
                 }
 
                 try:
-                    pred = cached_load_predictor(ML_MODEL_DIR, chosen_type)
-                    results = pred.predict(
+                    # Initialize PredictionPipeline with the chosen type
+                    from pipeline.prediction_pipeline import PredictionPipeline
+                    pipe = PredictionPipeline(model_dir=ML_MODEL_DIR, model_type=chosen_type)
+                    
+                    # Run the pipeline, passing model/tokenizer if LLM parsing is needed
+                    result_obj = pipe.run(
                         chemistry=chemistry,
+                        test_condition=test_condition if input_mode == "Manual Strings" else None,
+                        burden=burden if input_mode == "Manual Strings" else None,
+                        test_type=test_type if input_mode == "Manual Strings" else None,
+                        condition_text=cond_text if input_mode == "Describe in plain English" else None,
+                        tokenizer=model_tokenizer if input_mode == "Describe in plain English" else None,
+                        model=model_core if input_mode == "Describe in plain English" else None,
                     )
+                    
                     st.session_state.pred_results = {
-                        "predictions": results,
-                        "chemistry": chemistry,
-                        "model": model_choice,
+                        "predictions":     result_obj.predictions,
+                        "chemistry":       chemistry,
+                        "model":           model_choice,
+                        "inputs":          result_obj.inputs,
+                        "parser_warnings": result_obj.parser_warnings,
                     }
+                    # Append to rolling history (keep last 10)
+                    import time as _time
+                    hist_entry = {
+                        "ts_val":   result_obj.predictions.get("Ts"),
+                        "tm_val":   result_obj.predictions.get("Tm"),
+                        "tmt_val":  result_obj.predictions.get("Tm-Ts"),
+                        "conf":     result_obj.predictions.get("confidence", "?"),
+                        "dist":     result_obj.predictions.get("distance", 999.0),
+                        "model":    model_choice,
+                        "burden":   result_obj.inputs.get("burden") or "N/A",
+                        "cond":     result_obj.inputs.get("test_condition") or "N/A",
+                        "ts_stamp": _time.strftime("%H:%M:%S"),
+                    }
+                    hist = st.session_state.pred_history
+                    hist.insert(0, hist_entry)
+                    st.session_state.pred_history = hist[:10]
+
                 except Exception as exc:
                     st.error(f"Prediction failed: {exc}")
                     st.session_state.pred_results = None
@@ -625,14 +719,70 @@ with tab_pred:
                             unsafe_allow_html=True,
                         )
 
+                # ── Confidence badge ──────────────────────────────────
+                confidence = preds.get("confidence", "medium")
+                nn_dist    = preds.get("distance", 999.0)
+                conf_icons  = {"high": "🟢", "medium": "🟡", "low": "🔴"}
+                conf_labels = {
+                    "high":   "High confidence",
+                    "medium": "Medium confidence",
+                    "low":    "Low confidence — extrapolation risk",
+                }
+                st.markdown("")
+                st.markdown(
+                    f'<div style="text-align:center">'
+                    f'<span class="conf-badge {confidence}">'
+                    f'{conf_icons.get(confidence, "")} '
+                    f'{conf_labels.get(confidence, confidence)}'
+                    f'&nbsp;·&nbsp; NN dist = {nn_dist}'
+                    f'</span></div>',
+                    unsafe_allow_html=True,
+                )
+
+                # ── Parser warnings ───────────────────────────────────
+                parser_warnings = pr.get("parser_warnings", [])
+                if parser_warnings:
+                    st.markdown("")
+                    st.markdown(
+                        '<div class="section-header">Parser Warnings</div>',
+                        unsafe_allow_html=True,
+                    )
+                    for w in parser_warnings:
+                        st.markdown(
+                            f'<div class="warn-chip">⚠ {w}</div>',
+                            unsafe_allow_html=True,
+                        )
+
+                # ── Parsed condition preview (NL mode) ────────────────
+                parsed = pr["inputs"].get("parsed_condition")
+                if parsed:
+                    with st.expander("🔍 Parsed Condition Detail", expanded=False):
+                        a1, a2, a3 = st.columns(3)
+                        a1.metric("CO %",  f"{parsed.get('CO_pct', 0):.1f}")
+                        a2.metric("H₂ %",  f"{parsed.get('H2_pct', 0):.1f}")
+                        a3.metric("N₂ %",  f"{parsed.get('N2_pct', 0):.1f}")
+                        b1, b2, b3, b4 = st.columns(4)
+                        b1.metric("Sinter %", f"{parsed.get('sinter_pct', 0):.1f}")
+                        b2.metric("Ore %",    f"{parsed.get('ore_pct',    0):.1f}")
+                        b3.metric("Pellet %", f"{parsed.get('pellet_pct', 0):.1f}")
+                        b4.metric("Other %",  f"{parsed.get('other_pct',  0):.1f}")
+
                 # ── Input summary ─────────────────────────────────────
                 st.markdown("")
                 st.markdown('<div class="section-header">Input Summary</div>',
                             unsafe_allow_html=True)
 
                 chem = pr["chemistry"]
+                inputs = pr.get("inputs", {})
+                cond_val   = inputs.get("test_condition") or "N/A"
+                burden_val = inputs.get("burden")         or "N/A"
+                type_val   = inputs.get("test_type")      or "N/A"
+
                 summary_lines = [
                     f"  Model        : {pr['model']}",
+                    f"  Atmosphere   : {cond_val}",
+                    f"  Burden       : {burden_val}",
+                    f"  Test Type    : {type_val}",
                     "",
                     "  Chemistry:",
                 ]
@@ -645,9 +795,34 @@ with tab_pred:
                     f"    Ts     = {ts_val} °C",
                     f"    Tm     = {tm_val} °C",
                     f"    Tm-Ts  = {tmt_val} °C",
+                    f"    Conf.  = {confidence}  (NN dist = {nn_dist})",
                 ]
 
                 st.markdown(
                     f'<div class="summary-block">{chr(10).join(summary_lines)}</div>',
                     unsafe_allow_html=True,
                 )
+
+# ── Prediction history panel ───────────────────────────────────────────────────
+with tab_pred:
+    hist = st.session_state.get("pred_history", [])
+    if hist:
+        st.markdown("")
+        with st.expander(f"📋 Prediction History  ({len(hist)} runs)", expanded=False):
+            conf_colors = {"high": "#34d399", "medium": "#fbbf24", "low": "#f87171"}
+            for h in hist:
+                color = conf_colors.get(h["conf"], "#8892a8")
+                st.markdown(
+                    f'<div class="hist-row">'
+                    f'<span>{h["ts_stamp"]}</span>'
+                    f'<span>Ts=<span class="val">{h["ts_val"]}°C</span></span>'
+                    f'<span>Tm=<span class="val">{h["tm_val"]}°C</span></span>'
+                    f'<span>Tm-Ts=<span class="val">{h["tmt_val"]}°C</span></span>'
+                    f'<span style="color:{color};font-weight:600;">{h["conf"].upper()}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            if st.button("🗑 Clear History", key="clear_hist"):
+                st.session_state.pred_history = []
+                st.rerun()
+

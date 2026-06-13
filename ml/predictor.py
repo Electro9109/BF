@@ -32,7 +32,7 @@ import pandas as pd
 
 from ml.feature_processing import (
     CHEM_COLS, TARGET_COLS,
-    _parse_atmosphere, _encode_burden, _encode_test_type,
+    _parse_atmosphere, _encode_burden_numeric, _encode_test_type,
 )
 
 warnings.filterwarnings("ignore")
@@ -81,11 +81,26 @@ class Predictor:
         with open(feat_path, "rb") as f:
             self._feat_names = pickle.load(f)
 
+        # Load benchmark results for per-target best-model selection
+        benchmark_path = self.model_dir / "benchmark_results.csv"
+        self._benchmark = None
+        if benchmark_path.exists():
+            import pandas as _pd
+            self._benchmark = _pd.read_csv(benchmark_path)
+
         self._burden_columns = self._scalers.get("burden_columns", [])
 
         for target in self.targets:
             safe = target.replace("-", "_")
-            if self.model_type == "best":
+            if self.model_type == "best" and self._benchmark is not None:
+                # Independently select best model per target based on lowest RMSE
+                subset = self._benchmark[self._benchmark["Target"] == target]
+                if not subset.empty:
+                    best_name = subset.loc[subset["RMSE"].idxmin(), "Model"]
+                    model_path = self.model_dir / f"{best_name}_{safe}.pkl"
+                else:
+                    model_path = self.model_dir / f"best_{safe}.pkl"
+            elif self.model_type == "best":
                 model_path = self.model_dir / f"best_{safe}.pkl"
             else:
                 model_path = self.model_dir / f"{self.model_type}_{safe}.pkl"
@@ -103,8 +118,9 @@ class Predictor:
         test_condition: str = None,
         burden: str = None,
         test_type: str = None,
+        parsed_condition: dict = None,
     ) -> np.ndarray:
-        """Build one feature row from raw inputs."""
+        """Build one feature row from raw inputs or parsed conditions."""
         parts = []
 
         # 1. Chemistry
@@ -113,27 +129,72 @@ class Predictor:
         parts.append(chem_scaled)
 
         # 2. Atmosphere
-        if "atmosphere" in self._scalers and test_condition:
-            atm_df = _parse_atmosphere(pd.Series([test_condition]))
+        if "atmosphere" in self._scalers:
+            if parsed_condition:
+                atm_df = pd.DataFrame([{
+                    "CO_pct": parsed_condition.get("CO_pct", 0.0),
+                    "H2_pct": parsed_condition.get("H2_pct", 0.0),
+                    "N2_pct": parsed_condition.get("N2_pct", 0.0)
+                }])
+            else:
+                from ml.feature_processing import _parse_atmosphere
+                atm_df = _parse_atmosphere(pd.Series([test_condition or ""]))
             atm_scaled = self._scalers["atmosphere"].transform(atm_df)
             parts.append(atm_scaled)
 
-        # 3. Burden (one-hot against training columns)
-        if self._burden_columns:
-            burden_vec = np.zeros((1, len(self._burden_columns)))
-            if burden:
-                col_name = f"burden_{burden}"
-                if col_name in self._burden_columns:
-                    idx = self._burden_columns.index(col_name)
-                    burden_vec[0, idx] = 1.0
-            parts.append(burden_vec)
+        # 3. Burden
+        if "burden" in self._scalers:
+            if parsed_condition:
+                burden_df = pd.DataFrame([{
+                    "sinter_pct": parsed_condition.get("sinter_pct", 0.0),
+                    "ore_pct": parsed_condition.get("ore_pct", 0.0),
+                    "pellet_pct": parsed_condition.get("pellet_pct", 0.0),
+                    "other_pct": parsed_condition.get("other_pct", 0.0),
+                    "num_components": parsed_condition.get("num_components", 0)
+                }])
+            else:
+                from ml.feature_processing import _encode_burden_numeric
+                burden_df = _encode_burden_numeric(pd.Series([burden or ""]))
+            burden_scaled = self._scalers["burden"].transform(burden_df)
+            parts.append(burden_scaled)
+
+        # 3.5 Interaction features
+        if "interaction" in self._scalers:
+            if parsed_condition:
+                co_val = parsed_condition.get("CO_pct", 0.0)
+                h2_val = parsed_condition.get("H2_pct", 0.0)
+                n2_val = parsed_condition.get("N2_pct", 0.0)
+                sinter_val = parsed_condition.get("sinter_pct", 0.0)
+            else:
+                from ml.feature_processing import _parse_atmosphere, _encode_burden_numeric
+                atm_unscaled = _parse_atmosphere(pd.Series([test_condition or ""]))
+                co_val = float(atm_unscaled["CO_pct"].iloc[0])
+                h2_val = float(atm_unscaled["H2_pct"].iloc[0])
+                n2_val = float(atm_unscaled["N2_pct"].iloc[0])
+                
+                burden_unscaled = _encode_burden_numeric(pd.Series([burden or ""]))
+                sinter_val = float(burden_unscaled["sinter_pct"].iloc[0])
+                
+            basicity_val = chemistry.get("Basicity", 0.0)
+            
+            inter_df = pd.DataFrame([{
+                "CO_x_Basicity": co_val * basicity_val,
+                "Reducibility_Ratio": (co_val + h2_val) / (n2_val + 1e-5),
+                "Basicity_x_Sinter": basicity_val * sinter_val
+            }])
+            inter_scaled = self._scalers["interaction"].transform(inter_df)
+            parts.append(inter_scaled)
 
         # 4. Test type (one-hot)
         type_cols = [c for c in self._feat_names if c.startswith("type_")]
         if type_cols:
             type_vec = np.zeros((1, len(type_cols)))
-            if test_type:
-                col_name = f"type_{test_type}"
+            actual_type = test_type
+            if parsed_condition and "test_type" in parsed_condition:
+                actual_type = parsed_condition["test_type"]
+                
+            if actual_type:
+                col_name = f"type_{actual_type}"
                 if col_name in type_cols:
                     idx = type_cols.index(col_name)
                     type_vec[0, idx] = 1.0
@@ -149,6 +210,7 @@ class Predictor:
         test_condition: str = None,
         burden: str = None,
         test_type: str = None,
+        parsed_condition: dict = None,
     ) -> dict:
         """
         Predict Ts, Tm, Tm-Ts for given inputs.
@@ -159,16 +221,34 @@ class Predictor:
         test_condition : raw string e.g. 'CO= 40% & N2=60%'
         burden         : burden string e.g. 'S1-70%+O1-30%'
         test_type      : 'SO', 'SOP', or 'P'
+        parsed_condition : optional dict of already parsed numeric conditions
 
         Returns
         -------
         dict  : {"Ts": float, "Tm": float, "Tm-Ts": float}
         """
-        row = self._build_row(chemistry, test_condition, burden, test_type)
+        row = self._build_row(chemistry, test_condition, burden, test_type, parsed_condition)
         predictions = {}
         for target in self.targets:
             val = float(self._models[target].predict(row)[0])
             predictions[target] = round(val, 1)
+            
+        # Compute nearest neighbor distance for confidence indication
+        try:
+            from ml.similarity import nearest_neighbor_distance
+            dist = nearest_neighbor_distance(row)
+            if dist <= 1.05:
+                confidence = "high"
+            elif dist <= 1.82:
+                confidence = "medium"
+            else:
+                confidence = "low"
+        except Exception:
+            confidence = "medium"
+            dist = 999.0
+            
+        predictions["confidence"] = confidence
+        predictions["distance"] = round(dist, 3)
         return predictions
 
     def predict_batch(self, df: pd.DataFrame) -> pd.DataFrame:
