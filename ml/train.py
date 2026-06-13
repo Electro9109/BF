@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, RandomizedSearchCV
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 # XGBoost is optional (not available in all envs)
@@ -71,6 +71,43 @@ def get_models() -> dict:
     return models
 
 
+# ── Hyperparameter tuning ──────────────────────────────────────────────────
+def tune_hyperparameters(model_name: str, X: np.ndarray, y: np.ndarray) -> dict:
+    """Tune hyperparameters for a given model and target using RandomizedSearchCV."""
+    if model_name == "RandomForest":
+        base_model = RandomForestRegressor(random_state=42, n_jobs=-1)
+        param_dist = {
+            "n_estimators": [100, 200, 300, 400],
+            "max_depth": [None, 5, 10, 15, 20],
+            "min_samples_leaf": [1, 2, 4],
+            "min_samples_split": [2, 5, 10],
+            "max_features": ["sqrt", "log2", None]
+        }
+    elif model_name == "XGBoost" and HAS_XGB:
+        base_model = XGBRegressor(random_state=42, verbosity=0)
+        param_dist = {
+            "n_estimators": [100, 200, 300, 400],
+            "max_depth": [3, 5, 7, 9],
+            "learning_rate": [0.01, 0.05, 0.1, 0.2],
+            "subsample": [0.7, 0.8, 0.9],
+            "colsample_bytree": [0.7, 0.8, 0.9]
+        }
+    else:
+        return {}
+
+    search = RandomizedSearchCV(
+        estimator=base_model,
+        param_distributions=param_dist,
+        n_iter=25,
+        scoring="neg_root_mean_squared_error",
+        cv=3,
+        random_state=42,
+        n_jobs=-1
+    )
+    search.fit(X, y)
+    return search.best_params_
+
+
 # ── CV evaluation ──────────────────────────────────────────────────────────
 def cross_validate(model, X: np.ndarray, y: np.ndarray, n_splits: int = 5) -> dict:
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
@@ -105,13 +142,22 @@ def run_benchmark(
     targets: list,
     models: dict,
     n_splits: int = 5,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, dict]:
     records = []
+    tuned_models_dict = {}
     for target in targets:
         y = y_dict[target]
         for model_name, model in models.items():
-            print(f"  [{model_name}] target={target} ...", end=" ", flush=True)
-            scores = cross_validate(model, X, y, n_splits=n_splits)
+            print(f"  Tuning [{model_name}] target={target} ...", end=" ", flush=True)
+            best_params = tune_hyperparameters(model_name, X, y)
+            
+            # Create model instance with tuned parameters
+            if model_name == "RandomForest":
+                tuned_model = RandomForestRegressor(**best_params, random_state=42, n_jobs=-1)
+            else:
+                tuned_model = XGBRegressor(**best_params, random_state=42, verbosity=0)
+                
+            scores = cross_validate(tuned_model, X, y, n_splits=n_splits)
             print(f"MAE={scores['MAE']:.2f}  RMSE={scores['RMSE']:.2f}  R²={scores['R2']:.3f}")
             records.append({
                 "Target":    target,
@@ -123,23 +169,23 @@ def run_benchmark(
                 "R2":        round(scores["R2"],   3),
                 "R2_std":    round(scores["R2_std"],   3),
             })
-    return pd.DataFrame(records)
+            tuned_models_dict[(target, model_name)] = tuned_model
+    return pd.DataFrame(records), tuned_models_dict
 
 
 # ── Save models ────────────────────────────────────────────────────────────
-def save_models(models: dict, X: np.ndarray, y_dict: dict, targets: list, results_df: pd.DataFrame):
+def save_models(tuned_models: dict, X: np.ndarray, y_dict: dict, targets: list, results_df: pd.DataFrame):
     """
-    Refit each model on the full dataset and save to MLModels/.
+    Refit each tuned model on the full dataset and save to MLModels/.
     Also saves the best model per target based on lowest RMSE.
     """
     print("\nRefitting on full dataset and saving models...")
-    for model_name, model in models.items():
-        for target in targets:
-            model.fit(X, y_dict[target])
-            fname = MODEL_DIR / f"{model_name}_{target.replace('-', '_')}.pkl"
-            with open(fname, "wb") as f:
-                pickle.dump(model, f)
-            print(f"  Saved: {fname}")
+    for (target, model_name), model in tuned_models.items():
+        model.fit(X, y_dict[target])
+        fname = MODEL_DIR / f"{model_name}_{target.replace('-', '_')}.pkl"
+        with open(fname, "wb") as f:
+            pickle.dump(model, f)
+        print(f"  Saved: {fname}")
 
     # Save best model per target
     for target in targets:
@@ -200,7 +246,7 @@ def main():
     print("Running 5-fold cross-validation...")
     print("-" * 60)
 
-    results_df = run_benchmark(X, y_dict, args.targets, models, n_splits=args.folds)
+    results_df, tuned_models = run_benchmark(X, y_dict, args.targets, models, n_splits=args.folds)
 
     # Print table
     print("\n" + "=" * 60)
@@ -227,7 +273,7 @@ def main():
 
     # Save models and scalers
     if not args.no_save:
-        save_models(models, X, y_dict, args.targets, results_df)
+        save_models(tuned_models, X, y_dict, args.targets, results_df)
 
         scalers_path = MODEL_DIR / "scalers.pkl"
         with open(scalers_path, "wb") as f:

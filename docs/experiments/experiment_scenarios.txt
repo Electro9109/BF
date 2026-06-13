@@ -1,0 +1,43 @@
+TOPIC: Metallurgical Experiment Scenarios
+
+The following 8 benchmark experiment scenarios detail various combinations of gas atmospheres and burden mixes, along with their observed/expected effects on softening and melting temperatures (Ts, Tm, Tm-Ts) and overall reducibility.
+
+Scenario 1: Baseline Case (100% Sinter)
+- Atmosphere: CO=40%, N2=60% (no H2)
+- Burden Mix: 100% Sinter (S)
+- Expected Effect: Reference case. Displays the highest softening temperature (Ts) and a narrow cohesive zone (low Tm-Ts) due to high sinter reducibility and absence of low-melting ore/pellet phases.
+
+Scenario 2: H2-Enriched Atmosphere with 100% Sinter
+- Atmosphere: CO=40%, H2=8%, N2=52%
+- Burden Mix: 100% Sinter (S)
+- Expected Effect: Hydrogen enrichment accelerates early-stage iron oxides reduction. However, it causes early softening, causing Ts to drop and the cohesive zone (Tm-Ts) to widen compared to Scenario 1.
+
+Scenario 3: Sinter-Ore Blend
+- Atmosphere: CO=40%, N2=60%
+- Burden Mix: 70% Sinter + 30% Ore (SO)
+- Expected Effect: Introduction of 30% iron ore (high FeO content) prompts early slag formation. The low-melting slag phases cause a decrease in Ts.
+
+Scenario 4: Sinter-Pellet Blend
+- Atmosphere: CO=40%, N2=60%
+- Burden Mix: 70% Sinter + 30% Pellet (SOP)
+- Expected Effect: Acidic pellets resist softening longer than ore, maintaining shape. Ts increases and the cohesive zone (Tm-Ts) narrows relative to the Sinter-Ore blend.
+
+Scenario 5: Mixed Burden under Moderate H2
+- Atmosphere: CO=36%, H2=4%, N2=60%
+- Burden Mix: 65% Sinter + 25% Ore + 10% Pellet (SOP)
+- Expected Effect: Moderate H2 addition coupled with a mixed burden results in intermediate softening temperature (Ts) and moderate cohesive zone width.
+
+Scenario 6: High-Basicity Sinter Blend
+- Atmosphere: CO=40%, N2=60%
+- Burden Mix: High-basicity sinter blend (CaO/SiO2 ratio increased)
+- Expected Effect: Increasing basicity lowers the liquidus temperature of the primary slag, causing the melting temperature (Tm) to decrease and the cohesive zone (Tm-Ts) to narrow.
+
+Scenario 7: Combined H2 and High-Ore Load
+- Atmosphere: CO=37%, H2=6.5%, N2=56.5%
+- Burden Mix: 80% Sinter + 20% Ore (SO)
+- Expected Effect: The combined effect of hydrogen reduction and FeO from the ore leads to a significant depression in Ts and the widest cohesive zone (Tm-Ts).
+
+Scenario 8: 100% Pellet under Low CO
+- Atmosphere: CO=34%, H2=6%, N2=60%
+- Burden Mix: 100% Pellet (P)
+- Expected Effect: Pellets have high T.Fe% and low FeO, which strongly resist early softening, resulting in a very high Ts and low pressure drop (NDM%).

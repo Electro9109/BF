@@ -1,7 +1,7 @@
 Target,Model,MAE,MAE_std,RMSE,RMSE_std,R2,R2_std
-Ts,RandomForest,45.84,6.58,58.49,8.88,0.636,0.065
+Ts,RandomForest,45.8,6.56,58.49,8.87,0.636,0.065
 Ts,XGBoost,49.31,7.84,62.96,11.06,0.572,0.103
-Tm,RandomForest,35.63,5.67,43.88,7.26,0.351,0.142
+Tm,RandomForest,35.68,5.69,43.96,7.25,0.348,0.141
 Tm,XGBoost,38.13,5.76,46.84,7.05,0.267,0.076
-Tm-Ts,RandomForest,46.06,4.53,57.03,5.31,0.514,0.088
+Tm-Ts,RandomForest,46.06,4.56,57.04,5.32,0.514,0.089
 Tm-Ts,XGBoost,45.1,5.52,58.18,4.21,0.488,0.12
