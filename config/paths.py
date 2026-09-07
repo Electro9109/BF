@@ -1,12 +1,17 @@
-"""
-config/paths.py - All filesystem paths in one place.
+"""Repository-owned filesystem paths.
 
-If you move from local to Kaggle/Colab/another machine, this is the
-only file that should need editing.
+Paths are anchored to this file so imports and commands behave the same
+regardless of the process working directory.
 """
 
-DOCS_DIR        = "./docs"
-EMBED_MODEL_DIR = "./EmbedModels"
-LLM_MODEL_DIR   = "./LocalModels"
-ML_MODEL_DIR    = "./MLModels"
-DATA_FILE       = "./data_files/data_result.xlsx"
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+DOCS_DIR = PROJECT_ROOT / "docs"
+EMBED_MODEL_DIR = PROJECT_ROOT / "EmbedModels"
+LLM_MODEL_DIR = PROJECT_ROOT / "LocalModels"
+ML_MODEL_DIR = PROJECT_ROOT / "MLModels"
+DATA_FILE = PROJECT_ROOT / "data_files" / "data_result.xlsx"
+EXPERIMENTS_CSV = PROJECT_ROOT / "ignore" / "SMRF.csv"

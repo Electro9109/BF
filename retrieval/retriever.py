@@ -21,12 +21,12 @@ precomputed candidate indices instead of re-encoding.
 
 import numpy as np
 
-from config.retrieval import MIN_TOPIC_CANDIDATES, TOP_K
+from config.retrieval import TOP_K
 from data.schemas import Chunk
 from retrieval.embeddings import Embedder
 from retrieval.faiss_index import build_index
 from retrieval.reranker import rerank_by_section
-from retrieval.topic_filter import detect_topic
+from retrieval.topic_filter import detect_topic, filter_by_topic
 
 
 class RetrievalEngine:
@@ -51,13 +51,25 @@ class RetrievalEngine:
     3. rerank_by_section()  -> small multiplier nudge based on section type
     """
 
-    def __init__(self, chunks: list[Chunk]):
+    def __init__(
+        self,
+        chunks: list[Chunk],
+        embedder=None,
+        index_builder=build_index,
+        topic_detector=detect_topic,
+        candidate_filter=filter_by_topic,
+        reranker=rerank_by_section,
+    ):
         self.chunks = chunks
-        self._embedder = Embedder()
+        self._embedder = Embedder() if embedder is None else embedder
+        self._index_builder = index_builder
+        self._topic_detector = topic_detector
+        self._candidate_filter = candidate_filter
+        self._reranker = reranker
 
         texts = [c.embed_text if c.embed_text else c.content for c in chunks]
         self.embeddings = self._embedder.encode(texts)
-        self._index = build_index(self.embeddings)
+        self._index = self._index_builder(self.embeddings)
 
     def search(self, query: str, top_n: int = TOP_K) -> list[tuple[Chunk, float]]:
         """
@@ -66,18 +78,13 @@ class RetrievalEngine:
         Returns [(chunk_dict, cosine_score), ...] sorted descending.
         """
         q_lower = query.lower()
-        matched_topic = detect_topic(q_lower)
-
-        if matched_topic:
-            candidates = [c for c in self.chunks if c.topic == matched_topic]
-            if len(candidates) < MIN_TOPIC_CANDIDATES:
+        matched_topic = self._topic_detector(q_lower)
+        candidates, effective_topic = self._candidate_filter(self.chunks, matched_topic)
+        if matched_topic and effective_topic is None:
                 print(
                     f"[RAG] WARN: topic filter '{matched_topic}' returned "
-                    f"{len(candidates)} chunk(s) - falling back to full corpus."
+                    "too few chunks - falling back to full corpus."
                 )
-                candidates = self.chunks
-        else:
-            candidates = self.chunks
 
         if not candidates:
             return []
@@ -90,7 +97,7 @@ class RetrievalEngine:
             cand_texts = [c.embed_text if c.embed_text else c.content for c in candidates]
             cand_embeddings = self._embedder.encode(cand_texts)
 
-        tmp_index = build_index(cand_embeddings)
+        tmp_index = self._index_builder(cand_embeddings) if candidates is not self.chunks else self._index
 
         q_vec = self._embedder.encode_one(query)
 
@@ -102,5 +109,5 @@ class RetrievalEngine:
             if idx >= 0:
                 results.append((candidates[idx], float(score)))
 
-        results = rerank_by_section(query, results)
+        results = self._reranker(query, results)
         return results

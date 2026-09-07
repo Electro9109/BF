@@ -12,11 +12,16 @@ anything. detect_topic() below returns a single canonical topic string
 """
 
 import re
+from collections.abc import Mapping, Sequence
 
-from config.retrieval import TOPIC_KEYWORDS, MIN_TOPIC_CANDIDATES
+from config.retrieval import MIN_TOPIC_CANDIDATES
+from config.retrieval_domain import TOPIC_KEYWORDS
 
 
-def detect_topic(query_lower: str) -> str | None:
+def detect_topic(
+    query_lower: str,
+    topic_keywords: Mapping[str, Sequence[str]] | None = None,
+) -> str | None:
     """
     Return a single canonical topic name if the query clearly targets one
     topic, otherwise None (-> search all chunks).
@@ -29,19 +34,24 @@ def detect_topic(query_lower: str) -> str | None:
     If this produces unexpected results for ambiguous queries, reorder
     TOPIC_KEYWORDS or tighten the keyword phrases.
     """
-    for topic, keywords in TOPIC_KEYWORDS.items():
+    keywords_by_topic = TOPIC_KEYWORDS if topic_keywords is None else topic_keywords
+    for topic, keywords in keywords_by_topic.items():
         for kw in keywords:
             if re.search(rf"\b{re.escape(kw)}\b", query_lower):
                 return topic
     return None
 
 
-def filter_by_topic(chunks: list[dict], topic: str | None) -> tuple[list[dict], str | None]:
+def filter_by_topic(
+    chunks: list,
+    topic: str | None,
+    min_candidates: int = MIN_TOPIC_CANDIDATES,
+) -> tuple[list, str | None]:
     """
     Return (candidates, effective_topic).
 
     If `topic` is None, returns (all chunks, None).
-    If `topic` is set but matches fewer than MIN_TOPIC_CANDIDATES chunks,
+    If `topic` is set but matches fewer than `min_candidates` chunks,
     falls back to the full corpus and returns effective_topic=None so the
     caller can log the fallback.
     """
@@ -49,7 +59,7 @@ def filter_by_topic(chunks: list[dict], topic: str | None) -> tuple[list[dict], 
         return chunks, None
 
     candidates = [c for c in chunks if c.topic == topic]
-    if len(candidates) < MIN_TOPIC_CANDIDATES:
+    if len(candidates) < min_candidates:
         return chunks, None
 
     return candidates, topic

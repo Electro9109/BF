@@ -42,8 +42,10 @@ from ml.feature_processing import load_and_build, TARGET_COLS
 warnings.filterwarnings("ignore")
 
 # ── Paths ──────────────────────────────────────────────────────────────────
-DATA_PATH   = "data_files/data_result.xlsx"
-MODEL_DIR   = Path("MLModels")
+from config.paths import DATA_FILE, ML_MODEL_DIR
+
+DATA_PATH = DATA_FILE
+MODEL_DIR = Path(ML_MODEL_DIR)
 MODEL_DIR.mkdir(exist_ok=True)
 
 
@@ -284,6 +286,11 @@ def main():
         with open(feat_path, "wb") as f:
             pickle.dump(feat_names, f)
         print(f"Feature names    : {feat_path}")
+
+        targets_path = MODEL_DIR / "targets.pkl"
+        with open(targets_path, "wb") as f:
+            pickle.dump(args.targets, f)
+        print(f"Targets          : {targets_path}")
 
     print("\nDone.")
 

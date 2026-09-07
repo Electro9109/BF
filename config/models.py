@@ -16,6 +16,3 @@ LLM_MODEL_NAME = "Qwen1.5-0.5B-Chat"
 MAX_NEW_TOKENS = 220
 GENERATION_TEMPERATURE = 0.0
 
-# ML prediction — feature columns and default target
-ML_FEATURES = ["T Fe %", "FeO %", "SiO2 %", "CaO %", "Al2O3 %", "MgO%", "Basicity"]
-ML_TARGET = "Tm-Ts"

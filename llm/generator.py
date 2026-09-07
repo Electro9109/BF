@@ -3,7 +3,8 @@ llm/generator.py - Runs a single inference pass against the loaded model.
 """
 
 from config.models import GENERATION_TEMPERATURE, MAX_NEW_TOKENS
-from llm.prompts import SYSTEM_INSTRUCTION, build_prompt
+from llm.domain_prompts import SYSTEM_INSTRUCTION, build_domain_instructions
+from llm.prompts import build_prompt
 
 
 def generate(
@@ -14,11 +15,21 @@ def generate(
     max_new_tokens: int = MAX_NEW_TOKENS,
 ) -> str:
     """Run a single inference pass and return the decoded answer string."""
+    if tokenizer is None or model is None:
+        raise ValueError("A tokenizer and model are required for generation")
+
     import torch
 
     messages = [
         {"role": "system", "content": SYSTEM_INSTRUCTION},
-        {"role": "user", "content": build_prompt(question, context)},
+        {
+            "role": "user",
+            "content": build_prompt(
+                question,
+                context,
+                build_domain_instructions(question),
+            ),
+        },
     ]
     prompt = tokenizer.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True

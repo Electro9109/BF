@@ -34,10 +34,15 @@ from ml.feature_processing import (
     CHEM_COLS, TARGET_COLS,
     _parse_atmosphere, _encode_burden_numeric, _encode_test_type,
 )
+from config.paths import ML_MODEL_DIR
 
 warnings.filterwarnings("ignore")
 
-MODEL_DIR = Path("MLModels")
+MODEL_DIR = Path(ML_MODEL_DIR)
+
+
+class PredictionInputError(ValueError):
+    """Raised when prediction inputs cannot form a valid feature row."""
 
 
 class Predictor:
@@ -53,17 +58,18 @@ class Predictor:
 
     def __init__(
         self,
-        model_dir: str = "MLModels",
+        model_dir: str = ML_MODEL_DIR,
         targets: list = None,
         model_type: str = "best",
     ):
         self.model_dir  = Path(model_dir)
-        self.targets    = targets or TARGET_COLS
+        self.targets    = list(targets) if targets is not None else None
         self.model_type = model_type
         self._models    = {}
         self._scalers   = None
         self._feat_names = None
         self._burden_columns = None
+        self.last_feature_vector = None
         self._load()
 
     # ── Load ──────────────────────────────────────────────────────────────
@@ -80,6 +86,14 @@ class Predictor:
             self._scalers = pickle.load(f)
         with open(feat_path, "rb") as f:
             self._feat_names = pickle.load(f)
+
+        if self.targets is None:
+            targets_path = self.model_dir / "targets.pkl"
+            if targets_path.exists():
+                with open(targets_path, "rb") as f:
+                    self.targets = pickle.load(f)
+            else:
+                self.targets = TARGET_COLS
 
         # Load benchmark results for per-target best-model selection
         benchmark_path = self.model_dir / "benchmark_results.csv"
@@ -121,6 +135,26 @@ class Predictor:
         parsed_condition: dict = None,
     ) -> np.ndarray:
         """Build one feature row from raw inputs or parsed conditions."""
+        missing = [column for column in CHEM_COLS if column not in chemistry]
+        if missing:
+            raise PredictionInputError(f"Missing chemistry values: {missing}")
+        invalid = []
+        for column in CHEM_COLS:
+            try:
+                value = float(chemistry[column])
+            except (TypeError, ValueError):
+                invalid.append(column)
+                continue
+            if not np.isfinite(value):
+                invalid.append(column)
+        if invalid:
+            raise PredictionInputError(f"Invalid chemistry values: {invalid}")
+
+        if "atmosphere" in self._scalers and parsed_condition is None and not test_condition:
+            raise PredictionInputError("An atmosphere condition is required")
+        if "burden" in self._scalers and parsed_condition is None and not burden:
+            raise PredictionInputError("A burden composition is required")
+
         parts = []
 
         # 1. Chemistry
@@ -201,6 +235,8 @@ class Predictor:
             parts.append(type_vec)
 
         row = np.hstack(parts).astype(float)
+        if not np.isfinite(row).all():
+            raise PredictionInputError("Feature construction produced non-finite values")
         return row
 
     # ── Public predict ────────────────────────────────────────────────────
@@ -228,6 +264,7 @@ class Predictor:
         dict  : {"Ts": float, "Tm": float, "Tm-Ts": float}
         """
         row = self._build_row(chemistry, test_condition, burden, test_type, parsed_condition)
+        self.last_feature_vector = row[0].tolist()
         predictions = {}
         for target in self.targets:
             val = float(self._models[target].predict(row)[0])

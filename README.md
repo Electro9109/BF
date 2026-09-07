@@ -10,14 +10,31 @@ A dual-purpose **fully-offline** tool combining:
 
 ```bash
 # 1. Install dependencies
-pip install streamlit transformers torch sentence-transformers faiss-cpu xgboost scikit-learn openpyxl
+pip install -r requirements.txt
 
-# 2. Train ML models (once, or after new data / feature changes)
+# 2. Check the local installation
+python setup_check.py
+
+# 3. Train ML models only if MLModels/ is empty or data/features changed
 python -m ml.train
 
-# 3. Launch the UI
+# 4. Launch the UI
 streamlit run app_web.py
 ```
+
+The verified prototype URL is `http://localhost:8501` when Streamlit uses its default port.
+The interface provides RAG Chat and the Sinter predictor. The predictor can run with the
+trained local artifacts even when the local LLM is unavailable; RAG Chat and natural-language
+condition parsing require the files in `LocalModels/`.
+
+For a lightweight command-line RAG check:
+
+```bash
+python main.py "Explain sinter reducibility"
+```
+
+The first UI launch builds the local document index and loads the local models. This can take
+several minutes on CPU and does not require network access.
 
 > **First launch is slow.** Loading the ~1.2 GB local LLM into memory on CPU can take
 > several minutes the first time. This is a one-time cost per session — subsequent

@@ -25,12 +25,12 @@ Example
 """
 
 from __future__ import annotations
-import textwrap
 from dataclasses import dataclass, field
 from typing import Optional
 
 from ml.predictor import Predictor
 from ml.feature_processing import CHEM_COLS, TARGET_COLS
+from config.paths import ML_MODEL_DIR
 
 
 # ── Result dataclass ───────────────────────────────────────────────────────
@@ -38,8 +38,8 @@ from ml.feature_processing import CHEM_COLS, TARGET_COLS
 class PredictionResult:
     predictions: dict              # {"Ts": float, "Tm": float, "Tm-Ts": float}
     inputs: dict                   # raw user inputs
-    feature_vector: Optional[list] = None   # for similarity search
-    similar_experiments: list = field(default_factory=list)   # stub
+    feature_vector: Optional[list] = None
+    similar_experiments: list = field(default_factory=list)
     summary: str = ""              # human-readable for RAG handoff
     parser_warnings: list = field(default_factory=list)  # Phase-2 warnings
 
@@ -81,20 +81,19 @@ class PredictionPipeline:
 
     def __init__(
         self,
-        model_dir: str = "MLModels",
+        model_dir: str = ML_MODEL_DIR,
         model_type: str = "best",
         targets: list = None,
     ):
         self.predictor = Predictor(
             model_dir=model_dir,
             model_type=model_type,
-            targets=targets or TARGET_COLS,
+            targets=targets,
         )
-        # Similarity retriever will be injected here once ml/similarity.py is ready
         self._similarity_retriever = None
 
     def attach_similarity_retriever(self, retriever):
-        """Attach the similarity module once ml/similarity.py is implemented."""
+        """Attach a callable or object implementing historical comparison."""
         self._similarity_retriever = retriever
 
     def run(
@@ -153,16 +152,19 @@ class PredictionPipeline:
             parsed_condition=parsed_condition,
         )
 
-        # ── Step 2: Similarity (stub) ────────────────────────────────────
+        # ── Step 2: Historical comparison ───────────────────────────────
         similar = []
         if self._similarity_retriever is not None:
-            similar = self._similarity_retriever.find_similar(
-                chemistry=chemistry,
-                test_condition=test_condition,
-                burden=burden,
-                test_type=test_type,
-                top_k=3,
-            )
+            if callable(self._similarity_retriever):
+                similar = self._similarity_retriever(chemistry, k=3)
+            else:
+                similar = self._similarity_retriever.find_similar(
+                    chemistry=chemistry,
+                    test_condition=test_condition,
+                    burden=burden,
+                    test_type=test_type,
+                    top_k=3,
+                )
 
         # ── Step 3: Build result ─────────────────────────────────────────
         inputs = {
@@ -180,6 +182,7 @@ class PredictionPipeline:
         return PredictionResult(
             predictions=predictions,
             inputs=inputs,
+            feature_vector=self.predictor.last_feature_vector,
             similar_experiments=similar,
             summary=summary,
             parser_warnings=parser_warnings,

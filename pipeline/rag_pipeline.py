@@ -28,6 +28,7 @@ def answer_question(
     tokenizer,
     model,
     top_n: int,
+    max_context_chars: int = 12000,
 ) -> tuple[str, list[tuple[Chunk, float]]]:
     """
     Run retrieval + generation for one question.
@@ -39,7 +40,13 @@ def answer_question(
     Returns (answer_text, matches) where matches is the same
     [(chunk, score), ...] list shown in the diagnostics panel.
     """
-    matches = engine.search(search_query, top_n=top_n)
+    if engine is None:
+        return "No document index is available.", []
+
+    try:
+        matches = engine.search(search_query, top_n=top_n)
+    except Exception as exc:
+        return f"Document retrieval failed: {exc}", []
 
     if not matches:
         return (
@@ -50,9 +57,12 @@ def answer_question(
     context_parts = []
     for idx, (chunk, score) in enumerate(matches, 1):
         context_parts.append(f"[Source {idx}: {chunk.source}]\n{chunk.content}")
-    context = "\n\n".join(context_parts)
+    context = "\n\n".join(context_parts)[:max_context_chars]
 
-    response = generate(question, context, tokenizer, model)
+    try:
+        response = generate(question, context, tokenizer, model)
+    except Exception as exc:
+        return f"Answer generation failed: {exc}", matches
 
     response = _apply_hallucination_guard(response, context)
     return response, matches

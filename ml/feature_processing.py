@@ -23,6 +23,8 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 
+from config.paths import DATA_FILE
+
 
 # ── Column name constants ──────────────────────────────────────────────────
 CHEM_COLS = ["T Fe %", "FeO %", "SiO2 %", "CaO %", "Al2O3 %", "MgO%", "Basicity"]
@@ -88,7 +90,7 @@ class RangeScaler:
 
 
 # ── Loader ─────────────────────────────────────────────────────────────────
-def load_raw(path: str = "data_files/data_result.xlsx") -> pd.DataFrame:
+def load_raw(path: str = DATA_FILE) -> pd.DataFrame:
     """Load and return the cleaned raw DataFrame from the Data Analysis sheet."""
     df = pd.read_excel(path, sheet_name="Data Analysis ", header=1)
     df.columns = df.iloc[0]
@@ -102,8 +104,13 @@ def load_raw(path: str = "data_files/data_result.xlsx") -> pd.DataFrame:
         cols[nan_idx[0]] = "Test Type"
     df.columns = cols
 
+    required_columns = CHEM_COLS + TARGET_COLS
+    missing = [column for column in required_columns if column not in df.columns]
+    if missing:
+        raise ValueError(f"Experimental data is missing required columns: {missing}")
+
     # Coerce numeric columns
-    for col in CHEM_COLS + TARGET_COLS:
+    for col in required_columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df = df.dropna(subset=CHEM_COLS + TARGET_COLS).reset_index(drop=True)
@@ -200,9 +207,18 @@ def build_features(
     parts = []
     feature_names = []
 
+    if not fit_scalers and not scalers:
+        raise ValueError("scalers are required when fit_scalers=False")
+
     # 1. Chemistry (always included, always scaled)
     chem = df[CHEM_COLS].copy().astype(float)
-    chem_scaler = RangeScaler(CHEM_RANGES, CHEM_COLS)
+    chem_scaler = (
+        RangeScaler(CHEM_RANGES, CHEM_COLS)
+        if fit_scalers
+        else scalers.get("chemistry")
+    )
+    if chem_scaler is None:
+        raise ValueError("scalers is missing the chemistry scaler")
     chem_scaled = chem_scaler.transform(chem)
     parts.append(chem_scaled)
     feature_names += CHEM_COLS
@@ -211,7 +227,13 @@ def build_features(
     atm_scaler = None
     if use_atmosphere and CONDITION_COL in df.columns:
         atm = _parse_atmosphere(df[CONDITION_COL])
-        atm_scaler = RangeScaler(ATM_RANGES, atm.columns.tolist())
+        atm_scaler = (
+            RangeScaler(ATM_RANGES, atm.columns.tolist())
+            if fit_scalers
+            else scalers.get("atmosphere")
+        )
+        if atm_scaler is None:
+            raise ValueError("scalers is missing the atmosphere scaler")
         atm_scaled = atm_scaler.transform(atm)
         parts.append(atm_scaled)
         feature_names += atm.columns.tolist()
@@ -221,7 +243,13 @@ def build_features(
     burden_df = None
     if use_burden and BURDEN_COL in df.columns:
         burden_df = _encode_burden_numeric(df[BURDEN_COL])
-        burden_scaler = RangeScaler(BURDEN_RANGES, burden_df.columns.tolist())
+        burden_scaler = (
+            RangeScaler(BURDEN_RANGES, burden_df.columns.tolist())
+            if fit_scalers
+            else scalers.get("burden")
+        )
+        if burden_scaler is None:
+            raise ValueError("scalers is missing the burden scaler")
         burden_scaled = burden_scaler.transform(burden_df)
         parts.append(burden_scaled)
         feature_names += burden_df.columns.tolist()
@@ -237,7 +265,13 @@ def build_features(
         inter_df["Reducibility_Ratio"] = (atm_unscaled["CO_pct"] + atm_unscaled["H2_pct"]) / (atm_unscaled["N2_pct"] + 1e-5)
         inter_df["Basicity_x_Sinter"] = chem["Basicity"] * burden_unscaled["sinter_pct"]
         
-        inter_scaler = RangeScaler(INTERACTION_RANGES, inter_df.columns.tolist())
+        inter_scaler = (
+            RangeScaler(INTERACTION_RANGES, inter_df.columns.tolist())
+            if fit_scalers
+            else scalers.get("interaction")
+        )
+        if inter_scaler is None:
+            raise ValueError("scalers is missing the interaction scaler")
         inter_scaled = inter_scaler.transform(inter_df)
         parts.append(inter_scaled)
         feature_names += inter_df.columns.tolist()
@@ -274,7 +308,7 @@ def build_features(
 
 # ── Convenience: build from path ───────────────────────────────────────────
 def load_and_build(
-    path: str = "data_files/data_result.xlsx",
+    path: str = DATA_FILE,
     use_atmosphere: bool = True,
     use_burden: bool = True,
     use_test_type: bool = True,

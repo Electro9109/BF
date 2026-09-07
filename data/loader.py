@@ -13,7 +13,7 @@ from data.parser import extract_topic, split_into_sections, strip_topic_header
 from data.schemas import Chunk
 
 
-def load_and_chunk_data(docs_dir: str) -> list[Chunk]:
+def load_and_chunk_data(docs_dir: str, strict: bool = False) -> list[Chunk]:
     """
     Recursively reads every .txt file under docs_dir, splits into semantic
     sections, and returns a list of Chunk dicts:
@@ -28,8 +28,13 @@ def load_and_chunk_data(docs_dir: str) -> list[Chunk]:
 
     Recommended: add  TOPIC: <name>  as the first line of each .txt file.
     Falls back to the filename stem if the header is absent.
+
+    When ``strict`` is true, unreadable files raise a ``ValueError`` instead
+    of being skipped.
     """
     path = Path(docs_dir)
+    if path.exists() and not path.is_dir():
+        raise ValueError(f"Document path is not a directory: {path}")
     if not path.exists():
         path.mkdir(parents=True, exist_ok=True)
         return []
@@ -38,7 +43,9 @@ def load_and_chunk_data(docs_dir: str) -> list[Chunk]:
     for file_path in sorted(path.rglob("*.txt")):
         try:
             text = file_path.read_text(encoding="utf-8")
-        except Exception:
+        except (OSError, UnicodeError) as exc:
+            if strict:
+                raise ValueError(f"Could not read document: {file_path}") from exc
             continue
 
         rel_source = str(file_path.relative_to(path)).replace("\\", "/")

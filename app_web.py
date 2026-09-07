@@ -53,8 +53,6 @@ TOP_N = TOP_K
 # ---------- CSS ---------------------------------------------------------------
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
 html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     background-color: #0f1117 !important;
     color: #e0e0e0 !important;
@@ -257,9 +255,9 @@ def cached_load_model(model_path):
 
 # ---------- Predictor (loaded once) -------------------------------------------
 @st.cache_resource(show_spinner=False)
-def cached_load_predictor(model_dir, model_type):
-    from ml.predictor import Predictor
-    return Predictor(model_dir=model_dir, model_type=model_type)
+def cached_load_prediction_pipeline(model_dir, model_type):
+    from pipeline.prediction_pipeline import PredictionPipeline
+    return PredictionPipeline(model_dir=model_dir, model_type=model_type)
 
 
 # ---------- Docs fingerprint --------------------------------------------------
@@ -293,6 +291,8 @@ def init_session():
 
 
 init_session()
+model_tokenizer = None
+model_core = None
 
 # First-run: load docs automatically
 if st.session_state.engine is None:
@@ -335,7 +335,7 @@ with st.sidebar:
     # -- ML models status --
     ml_ok = False
     try:
-        predictor_default = cached_load_predictor(ML_MODEL_DIR, "best")
+        predictor_default = cached_load_prediction_pipeline(ML_MODEL_DIR, "best")
         ml_ok = True
         st.success("ML models ready")
     except Exception as exc:
@@ -373,9 +373,13 @@ with st.sidebar:
         docs_path.mkdir(parents=True, exist_ok=True)
         saved = []
         for uf in uploaded_files:
-            dest = docs_path / uf.name
+            safe_name = Path(uf.name).name
+            if not safe_name.lower().endswith(".txt"):
+                st.warning(f"Skipped non-text upload: {uf.name}")
+                continue
+            dest = docs_path / safe_name
             dest.write_bytes(uf.read())
-            saved.append(uf.name)
+            saved.append(safe_name)
         try:
             eng, cks = build_engine(DOCS_DIR)
             st.session_state.engine             = eng
@@ -474,8 +478,7 @@ def render_relevance(matches, placeholder):
 
 with tab_rag:
     if not model_ok:
-        st.error("LLM not ready — check the sidebar.")
-        st.stop()
+        st.warning("LLM not ready — RAG chat is unavailable, but manual prediction remains available.")
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -506,15 +509,18 @@ with tab_rag:
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.stop()
 
-        with st.spinner("Reading documents..."):
-            response, matches = answer_question(
-                question=user_prompt,
-                search_query=search_query,
-                engine=st.session_state.engine,
-                tokenizer=model_tokenizer,
-                model=model_core,
-                top_n=TOP_N,
-            )
+        if not model_ok:
+            response, matches = "LLM not ready. RAG chat is unavailable.", []
+        else:
+            with st.spinner("Reading documents..."):
+                response, matches = answer_question(
+                    question=user_prompt,
+                    search_query=search_query,
+                    engine=st.session_state.engine,
+                    tokenizer=model_tokenizer,
+                    model=model_core,
+                    top_n=TOP_N,
+                )
 
         st.session_state.last_matches = matches
         render_relevance(matches, relevance_placeholder)
@@ -614,8 +620,7 @@ with tab_pred:
 
                 try:
                     # Initialize PredictionPipeline with the chosen type
-                    from pipeline.prediction_pipeline import PredictionPipeline
-                    pipe = PredictionPipeline(model_dir=ML_MODEL_DIR, model_type=chosen_type)
+                    pipe = cached_load_prediction_pipeline(ML_MODEL_DIR, chosen_type)
                     
                     # Run the pipeline, passing model/tokenizer if LLM parsing is needed
                     result_obj = pipe.run(

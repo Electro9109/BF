@@ -45,11 +45,11 @@ def find_nearest_experiments(features: dict, k: int = 3) -> list:
     Each result dict contains the original experiment's feature values,
     its ML_TARGET value, its 1-based row_index, and a 'similarity' score.
 
-    NOTE: requires config.models.ML_FEATURES / ML_TARGET and
-    data.experiments_loader.load_experiments_df to be available.
+    NOTE: uses Sinter configuration from config.sinter and the historical
+    experiment loader.
     """
     from sklearn.preprocessing import StandardScaler
-    from config.models import ML_FEATURES, ML_TARGET
+    from config.sinter import ML_FEATURES, ML_TARGET
     from data.experiments_loader import load_experiments_df
 
     df = load_experiments_df()

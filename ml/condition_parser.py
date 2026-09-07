@@ -282,6 +282,16 @@ def parse_condition_nl(text: str, tokenizer, model,
                              test_type, warnings)
 
     # ── Step 2: LLM fallback ─────────────────────────────────────────────────
+    if tokenizer is None or model is None:
+        warnings.append(
+            "Natural-language parsing was incomplete and no local LLM was supplied; "
+            "regex values were retained."
+        )
+        return _build_result(
+            co, h2, n2, sinter, ore, pellet, other,
+            _infer_test_type(sinter, ore, pellet), warnings,
+        )
+
     import torch
 
     prompt = FEW_SHOT_PROMPT.format(text=text)
