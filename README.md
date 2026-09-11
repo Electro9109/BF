@@ -1,6 +1,7 @@
 # Metallurgical RAG + ML Assistant
 
-A dual-purpose **fully-offline** tool combining:
+A fully-offline prototype combining:
+- 📊 **Data Explorer + Cleaner** — profile CSV/Excel datasets, review quality issues, and apply approved traceable cleaning proposals
 - 🔍 **RAG Chat** — query metallurgical PDF/text documents with a local LLM
 - 🧮 **ML Predictor** — estimate softening (Ts) and melting (Tm, Tm−Ts) temperatures from burden chemistry, gas atmosphere, and burden composition
 
@@ -23,7 +24,8 @@ streamlit run app_web.py
 ```
 
 The verified prototype URL is `http://localhost:8501` when Streamlit uses its default port.
-The interface provides RAG Chat and the Sinter predictor. The predictor can run with the
+The interface provides Data Explorer/Cleaner, RAG Chat, and the Sinter predictor. Data Explorer profiles
+CSV/Excel inputs read-only and presents findings, limitations, possible next actions, and a controlled cleaning review. The Cleaner never changes data until selected proposals are approved, preserves the original frame, and records before/after quality snapshots and value-level changes. The predictor can run with the
 trained local artifacts even when the local LLM is unavailable; RAG Chat and natural-language
 condition parsing require the files in `LocalModels/`.
 

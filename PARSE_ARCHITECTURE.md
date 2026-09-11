@@ -1,6 +1,6 @@
 # PARSE Architecture Extraction
 
-Status: Phase 3 minimal Core implemented
+Status: Phase 4 Automated Data Understanding complete at engine level
 Date: 2026-09-07
 Source implementation: cleaned BF prototype
 
@@ -21,7 +21,8 @@ Raw information
     -> evaluation and human decision support
 ```
 
-No PARSE runtime package is introduced by this document.
+The minimal PARSE runtime package is implemented under `parse/`. This document
+continues to record the architectural reasoning and boundaries.
 
 The finalized minimal contracts are recorded separately in
 [PARSE_CONTRACTS.md](PARSE_CONTRACTS.md). This document explains the

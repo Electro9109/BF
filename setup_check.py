@@ -48,7 +48,20 @@ def check_paths() -> bool:
 
 def check_imports() -> bool:
     healthy = True
-    for module in ("data.loader", "retrieval.retriever", "pipeline.rag_pipeline", "pipeline.prediction_pipeline", "pipeline.hybrid_pipeline"):
+    modules = (
+        "data.loader",
+        "retrieval.retriever",
+        "pipeline.rag_pipeline",
+        "pipeline.prediction_pipeline",
+        "pipeline.hybrid_pipeline",
+        "parse.core.contracts",
+        "parse.eda",
+        "parse.analysis",
+        "parse.semantic_analysis",
+        "parse.cleaning_api",
+        "parse.adapters.bf",
+    )
+    for module in modules:
         try:
             importlib.import_module(module)
             print(f"OK import {module}")

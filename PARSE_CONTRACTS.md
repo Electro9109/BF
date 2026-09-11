@@ -1,6 +1,6 @@
 # PARSE Minimal Contracts
 
-Status: Phase 3 minimal Core implemented
+Status: Phase 4 Automated Data Understanding complete at engine level
 Date: 2026-09-07
 
 These contracts describe the smallest stable information boundaries justified by the cleaned BF prototype. They are design contracts, not yet a runtime package. Phase 3 will implement them only after review.
@@ -290,3 +290,7 @@ The first integration slice is now also implemented:
 - `tests/test_parse_bf_adapter.py` verifies BF lineage and evidence preservation.
 
 This completes the minimal Phase 3 Core objective. It does not migrate BF into `parse/` or claim that the Sinter module is complete.
+
+Phase 4 Increment 1 adds `DataUnderstanding` and structured EDA result types
+above these Core contracts. The capability emits source-linked findings and
+next-action suggestions without modifying its input dataset.

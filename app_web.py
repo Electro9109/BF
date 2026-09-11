@@ -2,7 +2,7 @@
 app_web.py - Streamlit Web UI for the Air-Gapped RAG Engine + ML Predictor.
 Run:  streamlit run app_web.py
 
-Two tabs:
+Three tabs:
   1. RAG Chat   — ask questions about metallurgical documents (unchanged)
   2. Predictor  — input experiment params → get Ts / Tm / Tm-Ts predictions
 
@@ -40,10 +40,15 @@ st.set_page_config(
 )
 
 import hashlib
+import json
 from pathlib import Path
+
+import pandas as pd
 
 from config.paths import DOCS_DIR, LLM_MODEL_DIR, ML_MODEL_DIR
 from config.retrieval import TOP_K
+from parse.eda import DataUnderstanding
+from parse.core.contracts import SourceRef
 from pipeline.rag_pipeline import answer_question, build_engine, load_model
 
 MODEL_PATH = LLM_MODEL_DIR
@@ -284,6 +289,11 @@ def init_session():
         "loaded_fingerprint": None,
         "pred_results":       None,
         "pred_history":       [],   # list of recent prediction dicts
+        "eda_result":         None,
+        "eda_frame":          None,
+        "analysis_bundle":    None,
+        "analysis_context":   None,
+        "cleaning_result":    None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -308,8 +318,8 @@ if st.session_state.engine is None:
 
 # ---------- Sidebar -----------------------------------------------------------
 with st.sidebar:
-    st.markdown("## 🔬 Metallurgical Assistant")
-    st.caption("RAG + ML Prediction · 100% Offline")
+    st.markdown("## P.A.R.S.E")
+    st.caption("Process · Analysis · Retrieval · Synthesis · Evaluation")
     st.divider()
 
     # -- Model status --
@@ -430,11 +440,11 @@ with st.sidebar:
 
 
 # ---------- Main area ---------------------------------------------------------
-st.markdown("## 🔬 Metallurgical RAG + Predictor")
-st.caption("Ask questions about your documents or predict softening–melting behaviour. Fully offline.")
+st.markdown("## P.A.R.S.E")
+st.caption("Process · Analysis · Retrieval · Synthesis · Evaluation — Fully offline metallurgical assistant.")
 st.divider()
 
-tab_rag, tab_pred = st.tabs(["🔍 RAG Chat", "🧮 Predictor"])
+tab_rag, tab_pred, tab_eda = st.tabs(["🔍 RAG Chat", "🧮 Predictor", "📊 Data Explorer"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -849,4 +859,248 @@ with tab_pred:
             if st.button("🗑 Clear History", key="clear_hist"):
                 st.session_state.pred_history = []
                 st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — DATA EXPLORER
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab_eda:
+    st.markdown('<div class="section-header">Understand a Dataset</div>', unsafe_allow_html=True)
+    st.caption("Upload a CSV or Excel file to inspect its structure, quality, relationships, and possible next actions. The uploaded data is profiled read-only.")
+
+    eda_file = st.file_uploader(
+        "Dataset",
+        type=["csv", "xlsx", "xls"],
+        key="eda_dataset_upload",
+    )
+    analysis_objective = st.text_input(
+        "Analysis objective (optional)",
+        placeholder="For example: identify attributes relevant to prediction",
+        key="analysis_objective",
+    )
+    if st.button("Profile dataset", type="primary", disabled=eda_file is None, key="profile_dataset"):
+        try:
+            from parse.eda_ui import analyze_loaded_dataset, load_uploaded_dataset
+
+            from parse.eda import DataUnderstanding
+            frame, source = load_uploaded_dataset(
+                eda_file.name,
+                eda_file.getvalue(),
+            )
+            st.session_state.eda_frame = frame
+            st.session_state.eda_result = DataUnderstanding(source).profile(frame)
+            st.session_state.analysis_bundle = analyze_loaded_dataset(
+                frame, source, analysis_objective or None,
+            )
+            from parse.semantic_analysis import HumanContext
+            st.session_state.analysis_context = HumanContext()
+            st.session_state.cleaning_result = None
+        except Exception as exc:
+            st.session_state.eda_result = None
+            st.session_state.eda_frame = None
+            st.session_state.analysis_bundle = None
+            st.error(f"Dataset profiling failed: {exc}")
+
+    eda_result = st.session_state.get("eda_result")
+    if eda_result is None:
+        st.info("Upload a dataset and select Profile dataset to begin.")
+    else:
+        overview = st.columns(4)
+        overview[0].metric("Rows", eda_result.row_count)
+        overview[1].metric("Columns", eda_result.column_count)
+        overview[2].metric("Findings", len(eda_result.findings))
+        overview[3].metric("Modified", "No" if not eda_result.data_modified else "Yes")
+
+        st.markdown("### Overview")
+        st.markdown(eda_result.summary())
+
+        analysis_bundle = st.session_state.get("analysis_bundle")
+        if analysis_bundle is not None:
+            st.markdown("### Dataset Analysis")
+            st.caption("Statistical observations, semantic candidates, and relevance are shown separately. Candidate meanings require review.")
+            analysis_tabs = st.tabs(["Attributes", "Relationships", "Quality", "Semantic Candidates", "Unknowns / Confirmation", "Summary"])
+            with analysis_tabs[0]:
+                st.dataframe(pd.DataFrame([attribute.to_dict() for attribute in analysis_bundle.eda.attributes]), use_container_width=True, hide_index=True)
+            with analysis_tabs[1]:
+                relationship_rows = [finding.to_dict() for finding in analysis_bundle.eda.findings if finding.category in {"relationship", "temporal"}]
+                st.dataframe(pd.DataFrame(relationship_rows) if relationship_rows else pd.DataFrame({"finding": ["No relationship finding was established."]}), use_container_width=True, hide_index=True)
+            with analysis_tabs[2]:
+                quality_rows = [finding.to_dict() for finding in analysis_bundle.eda.findings if finding.category in {"quality", "distribution"}]
+                st.dataframe(pd.DataFrame(quality_rows) if quality_rows else pd.DataFrame({"finding": ["No quality finding was established."]}), use_container_width=True, hide_index=True)
+            with analysis_tabs[3]:
+                st.dataframe(pd.DataFrame([candidate.to_dict() for candidate in analysis_bundle.semantic.candidates]), use_container_width=True, hide_index=True)
+            with analysis_tabs[4]:
+                for unknown in analysis_bundle.semantic.unknowns:
+                    st.markdown(f"- {unknown}")
+                candidates = list(analysis_bundle.semantic.candidates)
+                if candidates:
+                    candidate_ids = [candidate.candidate_id for candidate in candidates]
+                    selected_candidate_id = st.selectbox("Candidate to review", candidate_ids, key="semantic_candidate_review")
+                    selected_candidate = next(candidate for candidate in candidates if candidate.candidate_id == selected_candidate_id)
+                    confirmation_action = st.selectbox("Review action", ["confirm", "reject", "modify", "unknown", "conflict"], key="semantic_confirmation_action")
+                    confirmation_meaning = st.text_input("Confirmed or modified meaning", value=selected_candidate.candidate_meaning, key="semantic_confirmation_meaning")
+                    reviewer = st.text_input("Reviewer", key="semantic_reviewer")
+                    if st.button("Record confirmation", key="record_semantic_confirmation"):
+                        if not reviewer.strip():
+                            st.warning("Reviewer is required.")
+                        else:
+                            from parse.semantic_analysis import ConfirmationRecord, HumanContext
+                            if st.session_state.analysis_context is None:
+                                st.session_state.analysis_context = HumanContext()
+                            st.session_state.analysis_context.apply(ConfirmationRecord(
+                                f"confirmation:{len(st.session_state.analysis_context.confirmations) + 1}",
+                                selected_candidate_id, confirmation_action, selected_candidate.attribute,
+                                confirmation_meaning or None, reviewer,
+                            ))
+                            st.success("Context recorded explicitly; the dataset and EDA result were not changed.")
+                context = st.session_state.get("analysis_context")
+                if context and context.confirmations:
+                    st.dataframe(pd.DataFrame([record.to_dict() for record in context.confirmations]), use_container_width=True, hide_index=True)
+            with analysis_tabs[5]:
+                st.text(analysis_bundle.summary)
+                if analysis_bundle.relevance is not None:
+                    st.dataframe(pd.DataFrame([item.to_dict() for item in analysis_bundle.relevance.candidates]), use_container_width=True, hide_index=True)
+
+        applicable = [action for action in eda_result.next_actions if action.applicable]
+        if applicable:
+            st.markdown("### Possible Next Actions")
+            selected = st.selectbox(
+                "Choose a direction",
+                options=[action.action for action in applicable],
+                key="eda_next_action",
+            )
+            selected_reason = next(action.reason for action in applicable if action.action == selected)
+            st.info(selected_reason)
+
+        with st.expander("Column profiles", expanded=True):
+            st.dataframe(
+                pd.DataFrame([column.to_dict() for column in eda_result.columns]),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        with st.expander("Findings", expanded=True):
+            finding_rows = [
+                {
+                    "category": finding.category,
+                    "kind": finding.kind,
+                    "message": finding.message,
+                    "limitations": " ".join(finding.limitations),
+                }
+                for finding in eda_result.findings
+            ]
+            if finding_rows:
+                st.dataframe(pd.DataFrame(finding_rows), use_container_width=True, hide_index=True)
+            else:
+                st.success("No findings were generated for this dataset.")
+
+        with st.expander("Limitations", expanded=False):
+            for limitation in eda_result.limitations:
+                st.markdown(f"- {limitation}")
+
+        st.markdown("### Cleaner")
+        st.caption("Review proposed transformations based on analysis evidence. Nothing is changed until you approve proposals.")
+        
+        from parse.cleaning_api import create_cleaning_context, propose_cleaning, apply_cleaning
+        from parse.cleaning import HumanDecision
+        from parse.cleaning_context import CleaningPurpose
+
+        purpose_options: list[CleaningPurpose] = [
+            "unknown", "descriptive_analysis", "statistical_modelling", 
+            "prediction", "retrieval", "reporting", "integration"
+        ]
+        selected_purpose = st.selectbox(
+            "Intended Data Purpose",
+            options=purpose_options,
+            format_func=lambda x: x.replace("_", " ").title(),
+            key="cleaning_purpose"
+        )
+
+        if st.session_state.get("analysis_bundle"):
+            cleaning_context = create_cleaning_context(
+                st.session_state.analysis_bundle,
+                purpose=selected_purpose,
+                human_context=st.session_state.get("analysis_context")
+            )
+            
+            issues, proposals = propose_cleaning(cleaning_context, st.session_state.eda_frame)
+            
+            if issues:
+                st.markdown("#### Detected Issues")
+                st.dataframe(pd.DataFrame([issue.to_dict() for issue in issues]), use_container_width=True, hide_index=True)
+                
+            if proposals:
+                st.markdown("#### Transformation Proposals")
+                # Show rich proposal info
+                proposal_rows = []
+                for p in proposals:
+                    d = p.to_dict()
+                    # Flatten some fields for display
+                    d["evidence_str"] = ", ".join(e["locator"] or e["ref_id"] for e in d.get("evidence", []))
+                    proposal_rows.append(d)
+                st.dataframe(pd.DataFrame(proposal_rows), use_container_width=True, hide_index=True)
+                
+                proposal_labels = {p.proposal_id: f"{p.action} on {p.target} (confidence: {p.confidence})" for p in proposals}
+                approved = st.multiselect(
+                    "Approve transformations",
+                    options=list(proposal_labels),
+                    format_func=lambda value: proposal_labels[value],
+                    key="cleaning_approved",
+                )
+                
+                if st.button("Apply approved changes", type="primary", key="apply_cleaning"):
+                    # Create HumanDecisions for approved proposals
+                    decisions = [
+                        HumanDecision(
+                            decision_id=f"dec_{i}",
+                            proposal_id=pid,
+                            action="APPROVE",
+                            modifications={},
+                            rationale="Approved via UI",
+                            reviewer="User",
+                            created_at=pd.Timestamp.now().isoformat()
+                        )
+                        for i, pid in enumerate(approved)
+                    ]
+                    
+                    st.session_state.cleaning_result = apply_cleaning(
+                        st.session_state.eda_frame, 
+                        decisions=decisions, 
+                        context=cleaning_context
+                    )
+            else:
+                approved = []
+                st.info("No automatic transformation proposal is available. Review-only issues remain visible.")
+
+            cleaning_result = st.session_state.get("cleaning_result")
+            if cleaning_result is not None:
+                st.markdown("#### Cleaning Result")
+                col1, col2 = st.columns(2)
+                col1.metric("Changes applied", len(cleaning_result.changes))
+                col2.metric("Unresolved issues", len(cleaning_result.unresolved_issue_ids))
+                
+                st.dataframe(pd.DataFrame([change.to_dict() for change in cleaning_result.changes]), use_container_width=True, hide_index=True)
+                
+                if cleaning_result.validation:
+                    st.markdown("##### Validation")
+                    st.write(cleaning_result.validation.to_dict())
+                
+                st.download_button(
+                    "Download cleaning result (JSON)",
+                    data=json.dumps(cleaning_result.to_dict(), indent=2, default=str),
+                    file_name="parse_cleaning_result.json",
+                    mime="application/json",
+                    key="download_cleaning_result",
+                )
+
+            st.download_button(
+                "Download EDA result (JSON)",
+                data=json.dumps(eda_result.to_dict(), indent=2, default=str),
+                file_name="parse_eda_result.json",
+                mime="application/json",
+                key="download_eda_result",
+            )
+        else:
+            st.warning("Please profile the dataset first to enable context-aware cleaning.")
 
