@@ -706,12 +706,232 @@ task goes here, not into the current task's diff.)*
 
 ---
 
+---
+
+## Task 5 — Real missingness-independence check for imputation confidence
+**Status: COMPLETE.** Cross-column missingness association implemented via
+`compute_missingness_association()` using manual Cohen's d (pooled SD, capped at
+`NUMERIC_EFFECT_SIZE_CAP = 3.0`) for numeric columns and manual 2xk contingency table
+$\chi^2$ / Cramér's V for categorical/boolean columns; `MIN_GROUP_SIZE_FOR_ASSOCIATION = 5`
+threshold guards against small-sample noise; `score_imputation(series, frame=None, column_name=None)`
+preserves backward compatibility while computing real `s_placeholder_independence = 1.0 - max_association`
+and `missingness_pattern_checked: True` when DataFrame context is provided; both call sites
+in `parse/cleaning.py` updated; full suite green (106 passed). Do not reopen — file bugs as new tasks.
+
+> **Verified against the actual pushed code (commit `1721a4c`) before
+> writing this spec** — the note from the previous draft is resolved,
+> replaced with the finding below.
+>
+> **Signature blocker found and designed around:** `score_imputation()`
+> currently takes only `series: pd.Series` — it has no access to the
+> rest of the DataFrame, so it *cannot* compute a cross-column
+> association as originally drafted without a signature change. Both
+> call sites already have the full `frame` and the column name in scope
+> (`parse/cleaning.py` lines ~252 and ~361: `score_imputation(series)`
+> inside `_detect_legacy`, where `frame` is the enclosing method's
+> parameter and the loop variable is `column`; and
+> `score_imputation(frame[attr_name])` inside `_detect_with_context`,
+> where `frame` and `attr_name` are both already available). This task
+> now explicitly includes widening the signature — see Design step 0.
+
+### Objective
+`score_imputation()`'s `s_placeholder_independence` factor is currently
+fixed at `1.0` with a disclaimer (`"missingness_pattern_checked": false`).
+Replace it with a real check: does missingness in the target column
+correlate with values in any other column? If so, imputing with an
+unconditional median/mode is less trustworthy (the missingness may be
+MAR/MNAR, not MCAR), and confidence should reflect that.
+
+### Why
+This is the last placeholder-disguised-as-a-real-factor left from
+Task 1's imputation scorer. Per the same principle as every prior task:
+an honest flat value with a disclaimer was correct *until* the real
+check was feasible — it's feasible now, so it should be built, not left
+permanently flat.
+
+### Scope
+**In scope:**
+- A function that computes an association strength between "is this
+  value missing in the target column" and "what is the value in every
+  other column," for both numeric and categorical other-columns,
+  without scipy (same dependency-light standard as every prior task).
+- Wiring the result into `score_imputation()`'s
+  `s_placeholder_independence` factor, replacing the flat `1.0`.
+- Updating `basis["missingness_pattern_checked"]` to `true` with the
+  real association evidence attached.
+
+**Out of scope:**
+- Do NOT use this check to change *what* fill value is proposed
+  (still median/mode) — only the confidence score. Proposing a
+  conditional/group-wise imputation (e.g. "impute median within groups
+  of column B") is a materially different, higher-risk feature that
+  needs its own task and its own human-approval framing — don't fold it
+  in here even though the data to support it now exists.
+- Do NOT run this check for every column pair in the dataset up front —
+  only for the specific target column being scored, at the point
+  `score_imputation()` is called for it.
+- Do NOT touch outlier scoring, duplicate scoring, or Task 4's MAD work.
+
+### Design
+
+**Step 0 — widen `score_imputation()`'s signature.** Change it to:
+```python
+def score_imputation(
+    series: pd.Series,
+    frame: pd.DataFrame | None = None,
+    column_name: str | None = None,
+) -> tuple[float, dict[str, Any]]:
+```
+`frame`/`column_name` are optional and default to `None` so any other
+caller (tests included) that only has a bare `Series` still works —
+when either is `None`, skip the association check and fall back to the
+current honest-disclaimer behavior (`s_placeholder_independence = 1.0`,
+`"missingness_pattern_checked": False`) rather than erroring. This
+keeps the change backward-compatible rather than forcing every call
+site and every existing test to pass two new arguments.
+
+Then update **both** call sites to pass the extra arguments:
+- `parse/cleaning.py` line ~252 (inside `_detect_legacy`):
+  `score_imputation(series)` → `score_imputation(series, frame=frame, column_name=str(column))`
+- `parse/cleaning.py` line ~361 (inside `_detect_with_context`):
+  `score_imputation(frame[attr_name])` → `score_imputation(frame[attr_name], frame=frame, column_name=attr_name)`
+
+New function, e.g. `compute_missingness_association(frame, target_column) -> tuple[float, dict]`:
+
+1. Build the missingness indicator: `is_missing = frame[target_column].isna()`.
+2. For every other column `other` in `frame`:
+   - Skip if `other` has fewer than **5 non-null observations in each
+     of the missing/non-missing groups** (name this constant
+     `MIN_GROUP_SIZE_FOR_ASSOCIATION = 5`, documented as a rule-of-thumb
+     like `MIN_STABLE_SAMPLE_SIZE` in Task 1 — too small a group makes
+     any association estimate noise, not signal).
+   - **If `other` is numeric:** compute a bounded effect size between
+     the two groups (values of `other` where `is_missing` vs. where
+     not): `effect = abs(mean_missing_group - mean_nonmissing_group) / pooled_std`
+     where `pooled_std` is the pooled standard deviation of the two
+     groups (guard `pooled_std == 0` → `effect = 0.0` if means are also
+     equal, else treat as maximal separation capped at the same bound
+     below). Map to `[0, 1]` via `min(1.0, effect / 3.0)` — an effect
+     size of 3 pooled-SDs of mean separation is treated as "as
+     associated as this bound cares to distinguish further." Document
+     the `3.0` divisor as a chosen cap, not a derived constant.
+   - **If `other` is categorical/boolean:** build a 2×k contingency
+     table (`is_missing` × categories of `other`), compute the
+     chi-square statistic manually (`sum((observed - expected)^2 / expected)`
+     over all cells, with `expected = row_total * col_total / grand_total`,
+     skip cells where `expected == 0`), then Cramér's V:
+     `V = sqrt(chi2 / (n * min(rows-1, cols-1)))` = `sqrt(chi2 / n)` since
+     rows=2 always makes `min(rows-1, cols-1) = min(1, cols-1)`, which is
+     `1` whenever `cols >= 2` — so this simplifies to `V = sqrt(chi2 / n)`,
+     already bounded `[0, 1]` by construction, no extra capping needed
+     (verify this bound holds in the unit tests rather than trusting the
+     derivation blindly).
+   - Skip `other == target_column` obviously, and skip any column that
+     is itself the same missingness pattern trivially (not expected in
+     practice, but guard divide-by-zero if `is_missing` is constant
+     across the whole frame — shouldn't happen since `score_imputation`
+     only runs when there's missingness, but a fully-missing column
+     would make `is_missing` constant `True`, so guard `is_missing.nunique() < 2` → skip the whole check, return `(1.0, {"skipped": "target column has no non-missing values to compare against"})`).
+3. Take `max_association = max(all computed associations)` across all
+   compared columns (0.0 if no column qualified for comparison — no
+   evidence of association is not the same as evidence of independence,
+   but per the same "honest default" principle, absence of a detectable
+   signal defaults toward *not* penalizing confidence here, since a
+   false "possible bias" flag with no basis is its own kind of
+   dishonesty — document this choice in the docstring).
+4. `s_placeholder_independence = 1 - max_association`, clipped to `[0, 1]`.
+5. `basis` must include: `"missingness_pattern_checked": true`,
+   `"max_association": max_association`, `"associated_column": <name of the column that produced max_association, or null>`,
+   `"association_method": "effect_size" | "cramers_v" | null`,
+   `"columns_compared": N`, `"columns_skipped_insufficient_data": M`.
+
+### Files
+- **Edit:** `parse/cleaning_confidence.py` — widen `score_imputation()`'s
+  signature per Design Step 0, add `MIN_GROUP_SIZE_FOR_ASSOCIATION = 5`
+  and the effect-size cap constant (name it, e.g.
+  `NUMERIC_EFFECT_SIZE_CAP = 3.0`), add
+  `compute_missingness_association(...)`, wire it into
+  `score_imputation()` replacing the flat `1.0` block when `frame`/
+  `column_name` are provided.
+- **Edit:** `parse/cleaning.py` — update both call sites (lines ~252
+  and ~361, confirmed above) to pass `frame=` and `column_name=`.
+- **Edit:** `tests/test_cleaning_confidence.py` — unit tests for
+  `compute_missingness_association` with constructed data: a case with
+  a strong numeric association (known effect size), a strong
+  categorical association (known Cramér's V via hand-built contingency
+  table), a case with no association (both should report low/near-zero
+  and `s_placeholder_independence` near `1.0`), and the
+  insufficient-data-skip case.
+- **Edit:** `tests/test_cleaning.py` / `tests/test_cleaning_integration.py`
+  — update any existing assertion that checked for the old
+  `"missingness_pattern_checked": false` placeholder text (search for
+  it — it will now be `true` with real values attached) so tests
+  reflect the real behavior, not the old placeholder.
+
+### Non-Negotiables (DO NOT)
+- Do NOT make `frame`/`column_name` required — they must stay optional
+  keyword arguments defaulting to `None`, falling back to the current
+  disclaimer behavior when absent, so existing tests that call
+  `score_imputation(series)` with one argument keep working unless you
+  deliberately choose to update them (and if you do update them, that's
+  fine — just don't let a missed call site silently break).
+- Do NOT add scipy — chi-square and effect size are computed manually,
+  per Design.
+- Do NOT let this check change the imputation *action* (still
+  median/mode) — confidence only.
+- Do NOT run the association check across all columns for all
+  imputation proposals eagerly at detection time if that would be
+  expensive on wide datasets — it's fine to run per-proposal at
+  scoring time (this is the existing call pattern), just don't add a
+  separate all-pairs precomputation pass.
+- Do NOT silently keep the old `1.0` fallback for cases you didn't
+  anticipate — if a column type doesn't fit numeric or
+  categorical/boolean cleanly (e.g. datetime, free text), treat it like
+  Task 2's `not_computed` branch: skip it explicitly, don't force a
+  number, and don't count it as "no association" if you didn't actually
+  check it (it should reduce `columns_compared`, not silently inflate
+  confidence).
+
+### Testing
+- Hand-built numeric case: two groups with a known, computable effect
+  size (e.g. group means 10 apart, known pooled std) → assert the
+  computed effect and the mapped `[0,1]` value match by calculation.
+- Hand-built categorical case: a contingency table with a known
+  chi-square value computed by hand → assert Cramér's V matches.
+- Null/no-association case: missingness indicator uncorrelated with
+  every other column (e.g. random assignment in a fixture) → assert
+  `max_association` is low and `s_placeholder_independence` is close to
+  `1.0`.
+- Insufficient-data case: a column where one group has fewer than
+  `MIN_GROUP_SIZE_FOR_ASSOCIATION` observations → assert it's skipped
+  and reflected in `columns_skipped_insufficient_data`, not silently
+  included.
+- Fully-missing-column guard case.
+- Full suite stays green.
+
+### Acceptance Criteria
+- [x] `compute_missingness_association()` exists, documented, with both
+      named constants explained as chosen bounds/thresholds.
+- [x] `score_imputation()` accepts optional `frame`/`column_name` and
+      both call sites in `parse/cleaning.py` pass them.
+- [x] `score_imputation()`'s `s_placeholder_independence` is real (not
+      a flat `1.0`) whenever `frame`/`column_name` are provided, and
+      `basis["missingness_pattern_checked"]` is `true` in that case;
+      falls back to the honest `1.0`/`false` disclaimer when they're
+      not provided.
+- [x] No scipy dependency added.
+- [x] Imputation *action* (fill value proposed) is unchanged — only the
+      confidence score and its basis differ.
+- [x] New tests pass with hand-calculated expected values; full
+      existing suite still green; any test that previously asserted the
+      old `false`/`1.0` placeholder is updated to assert real behavior.
+
+---
+
 ## Upcoming (not started — for context only, do not work on these yet)
 
-- **Task 5** — Add a missingness-independence check (does missingness
-  in column A correlate with values in column B) and use it to compute
-  a real `s_placeholder_independence` in the Task 1 imputation scorer.
 - **Task 6** — Collapse `_detect_legacy` into `_detect_with_context`
   once all call sites pass a `CleaningContext`, and delete the legacy
   path.
+
 

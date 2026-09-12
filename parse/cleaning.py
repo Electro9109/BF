@@ -249,7 +249,7 @@ class DataCleaner:
                     numeric = pd.api.types.is_numeric_dtype(series)
                     method = "median" if numeric else "mode"
                     value = float(non_null.median()) if numeric else non_null.mode().iloc[0]
-                    imp_conf, imp_basis = score_imputation(series)
+                    imp_conf, imp_basis = score_imputation(series, frame=frame, column_name=str(column))
                     proposals.append(TransformationProposal(
                         f"impute_{column}", issue_id, "impute_missing",
                         field=str(column), method=method, parameters={"value": value, "confidence_basis": imp_basis},
@@ -358,7 +358,7 @@ class DataCleaner:
                              val = non_null.mode().iloc[0]
                              method = "mode"
                              
-                         imp_conf, imp_basis = score_imputation(frame[attr_name])
+                         imp_conf, imp_basis = score_imputation(frame[attr_name], frame=frame, column_name=attr_name)
                          proposals.append(TransformationProposal(
                             f"impute_{attr_name}", issue_id, "impute_missing",
                             target=attr_name, field=attr_name, method=method,

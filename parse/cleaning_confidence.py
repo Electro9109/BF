@@ -56,7 +56,191 @@ def score_duplicate_removal(
     return confidence, basis
 
 
-def score_imputation(series: pd.Series) -> tuple[float, dict[str, Any]]:
+# Constants for missingness association check (Task 5)
+# Rule-of-thumb floor for group size in missing vs non-missing comparison
+MIN_GROUP_SIZE_FOR_ASSOCIATION = 5  # rule-of-thumb, revisit
+# Chosen upper cap for numeric effect size (Cohen's d): 3 pooled SDs corresponds to max association 1.0
+NUMERIC_EFFECT_SIZE_CAP = 3.0  # chosen threshold, not derived
+
+
+def compute_missingness_association(
+    frame: pd.DataFrame,
+    target_column: str,
+    min_group_size: int = MIN_GROUP_SIZE_FOR_ASSOCIATION,
+    effect_size_cap: float = NUMERIC_EFFECT_SIZE_CAP,
+) -> tuple[float, dict[str, Any]]:
+    """Compute association between target column missingness and all other columns.
+
+    Checks whether missingness in `target_column` correlates with values in any other
+    column. If missingness is correlated with other observed variables (MAR/MNAR),
+    unconditional single-value imputation (median or mode) is less representative,
+    so confidence in the imputation should decrease.
+
+    Args:
+        frame: The full DataFrame containing target_column and other columns.
+        target_column: The name of the column whose missingness is being analyzed.
+        min_group_size: Minimum non-null count required in BOTH missing and
+            non-missing groups to compute an association (default: 5).
+        effect_size_cap: Maximum Cohen's d divisor representing maximal separation (default: 3.0).
+
+    Returns:
+        (max_association, basis_dict) where max_association is in [0.0, 1.0].
+    """
+    if target_column not in frame.columns:
+        return 0.0, {
+            "max_association": 0.0,
+            "associated_column": None,
+            "association_method": None,
+            "columns_compared": 0,
+            "columns_skipped_insufficient_data": 0,
+            "note": f"Column '{target_column}' not found in frame.",
+        }
+
+    is_missing = frame[target_column].isna()
+    # Guard: if target column is completely non-missing or completely missing across frame
+    if is_missing.nunique() < 2:
+        return 0.0, {
+            "max_association": 0.0,
+            "associated_column": None,
+            "association_method": None,
+            "columns_compared": 0,
+            "columns_skipped_insufficient_data": 0,
+            "note": "Target column has no missing values or no non-missing values to compare against.",
+        }
+
+    columns_compared = 0
+    columns_skipped_insufficient_data = 0
+    max_association = 0.0
+    associated_column: str | None = None
+    association_method: str | None = None
+
+    for col in frame.columns:
+        if col == target_column:
+            continue
+
+        other_series = frame[col]
+
+        # Partition other_series by target column missingness, dropping NaN in other_series
+        group_missing = other_series[is_missing].dropna()
+        group_nonmissing = other_series[~is_missing].dropna()
+
+        n_miss = len(group_missing)
+        n_nonmiss = len(group_nonmissing)
+
+        if n_miss < min_group_size or n_nonmiss < min_group_size:
+            columns_skipped_insufficient_data += 1
+            continue
+
+        is_numeric = pd.api.types.is_numeric_dtype(other_series) and not pd.api.types.is_bool_dtype(other_series)
+        is_categorical = (
+            isinstance(other_series.dtype, pd.CategoricalDtype)
+            or pd.api.types.is_bool_dtype(other_series)
+            or pd.api.types.is_object_dtype(other_series)
+        )
+
+        if is_numeric:
+            s_miss_vals = pd.to_numeric(group_missing, errors="coerce").dropna()
+            s_nonmiss_vals = pd.to_numeric(group_nonmissing, errors="coerce").dropna()
+            n1 = len(s_miss_vals)
+            n2 = len(s_nonmiss_vals)
+            if n1 < min_group_size or n2 < min_group_size:
+                columns_skipped_insufficient_data += 1
+                continue
+
+            mean1 = float(s_miss_vals.mean())
+            mean2 = float(s_nonmiss_vals.mean())
+            var1 = float(s_miss_vals.var(ddof=1)) if n1 > 1 else 0.0
+            var2 = float(s_nonmiss_vals.var(ddof=1)) if n2 > 1 else 0.0
+
+            # Pooled standard deviation: sqrt(((n1 - 1)*s1^2 + (n2 - 1)*s2^2) / (n1 + n2 - 2))
+            df = n1 + n2 - 2
+            if df > 0:
+                pooled_var = ((n1 - 1) * var1 + (n2 - 1) * var2) / df
+                pooled_std = math.sqrt(max(0.0, pooled_var))
+            else:
+                pooled_std = 0.0
+
+            if pooled_std == 0.0:
+                if mean1 == mean2:
+                    assoc = 0.0
+                else:
+                    assoc = 1.0
+            else:
+                effect_size = abs(mean1 - mean2) / pooled_std
+                assoc = min(1.0, effect_size / float(effect_size_cap))
+
+            columns_compared += 1
+            if assoc > max_association:
+                max_association = assoc
+                associated_column = str(col)
+                association_method = "effect_size"
+
+        elif is_categorical:
+            # Contingency table between is_missing (2 rows) and categories of other_series (k cols)
+            # Combine is_missing and other_series dropna
+            valid_mask = other_series.notna()
+            miss_sub = is_missing[valid_mask]
+            cat_sub = other_series[valid_mask]
+
+            contingency = pd.crosstab(miss_sub, cat_sub)
+            rows, cols = contingency.shape
+            if rows < 2 or cols < 2:
+                # No variation in categories across the combined subsets
+                columns_skipped_insufficient_data += 1
+                continue
+
+            grand_total = contingency.values.sum()
+            if grand_total == 0:
+                columns_skipped_insufficient_data += 1
+                continue
+
+            row_sums = contingency.sum(axis=1).values
+            col_sums = contingency.sum(axis=0).values
+
+            # Compute chi-square: sum((O - E)^2 / E)
+            chi2 = 0.0
+            for i in range(rows):
+                for j in range(cols):
+                    expected = (row_sums[i] * col_sums[j]) / grand_total
+                    if expected > 0:
+                        observed = contingency.iloc[i, j]
+                        chi2 += ((observed - expected) ** 2) / expected
+
+            # Cramér's V: sqrt(chi2 / (n * min(rows - 1, cols - 1)))
+            # Here rows = 2, so min(rows - 1, cols - 1) = min(1, cols - 1) = 1 (since cols >= 2).
+            # Thus V = sqrt(chi2 / grand_total).
+            v = math.sqrt(max(0.0, chi2 / grand_total))
+            assoc = max(0.0, min(1.0, v))
+
+            columns_compared += 1
+            if assoc > max_association:
+                max_association = assoc
+                associated_column = str(col)
+                association_method = "cramers_v"
+        else:
+            # Explicitly skip non-numeric and non-categorical/boolean types (e.g. datetime)
+            # per non-negotiables, not counting as compared or zero association.
+            continue
+
+    # Note on absence of evidence vs evidence of absence:
+    # If no column qualified or no association was detected, max_association is 0.0,
+    # meaning s_placeholder_independence = 1.0. Absence of detectable association
+    # does not prove independence, but defaults to not penalizing confidence.
+    basis: dict[str, Any] = {
+        "max_association": round(max_association, 4),
+        "associated_column": associated_column,
+        "association_method": association_method,
+        "columns_compared": columns_compared,
+        "columns_skipped_insufficient_data": columns_skipped_insufficient_data,
+    }
+    return max_association, basis
+
+
+def score_imputation(
+    series: pd.Series,
+    frame: pd.DataFrame | None = None,
+    column_name: str | None = None,
+) -> tuple[float, dict[str, Any]]:
     """Score confidence for missing value imputation (median or mode).
 
     Confidence reflects how representative the proposed fill value is likely to be,
@@ -78,7 +262,9 @@ def score_imputation(series: pd.Series) -> tuple[float, dict[str, Any]]:
         * categorical/boolean: 1 - normalized_entropy of value frequencies (Shannon entropy /
           log(k)). 1.0 if single dominant value or uniform-free, 0.0 if perfectly uniform across
           multiple classes.
-    - s_placeholder_independence: 1.0 (fixed in Task 1, pending MAR/MNAR analysis in Task 5).
+    - s_placeholder_independence: 1.0 - max_association if frame and column_name are provided,
+      derived from cross-column missingness association check. Falls back to 1.0 with a disclaimer
+      if frame or column_name is omitted for backward compatibility.
 
     Returns:
         (confidence, basis) with sub-scores and raw inputs.
@@ -151,8 +337,16 @@ def score_imputation(series: pd.Series) -> tuple[float, dict[str, Any]]:
             normalized_entropy = max(0.0, min(1.0, normalized_entropy))
             s_dispersion = 1.0 - normalized_entropy
 
-    # 4. Placeholder independence (honest 1.0 placeholder with disclaimer)
-    s_placeholder_independence = 1.0
+    # 4. Missingness independence check (Task 5)
+    if frame is not None and column_name is not None and column_name in frame.columns:
+        max_assoc, assoc_basis = compute_missingness_association(frame, column_name)
+        s_placeholder_independence = max(0.0, min(1.0, 1.0 - max_assoc))
+        pattern_checked = True
+    else:
+        # Fallback when frame or column_name is omitted (backward compatibility)
+        s_placeholder_independence = 1.0
+        pattern_checked = False
+        assoc_basis = None
 
     confidence = (
         0.30 * s_missing_rate
@@ -171,9 +365,14 @@ def score_imputation(series: pd.Series) -> tuple[float, dict[str, Any]]:
         "missing_rate": round(missing_rate, 4),
         "non_null_count": non_null_count,
         "total_count": total_count,
-        "missingness_pattern_checked": False,
-        "note": "MAR/MNAR correlation check not yet implemented — see Task 5",
+        "missingness_pattern_checked": pattern_checked,
     }
+
+    if pattern_checked and assoc_basis is not None:
+        basis.update(assoc_basis)
+    else:
+        basis["note"] = "Frame or column_name omitted; MAR/MNAR cross-column check skipped."
+
     if cv is not None:
         basis["cv"] = round(cv, 4)
     if normalized_entropy is not None:

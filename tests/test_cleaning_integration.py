@@ -52,7 +52,8 @@ def test_cleaning_consumes_analysis_missingness_not_re_run(analysis_bundle, samp
     assert missing_proposals[0].field == "value"
     assert missing_proposals[0].confidence is not None
     assert "confidence_basis" in missing_proposals[0].parameters
-    assert missing_proposals[0].parameters["confidence_basis"]["missingness_pattern_checked"] is False
+    assert missing_proposals[0].parameters["confidence_basis"]["missingness_pattern_checked"] is True
+    assert "max_association" in missing_proposals[0].parameters["confidence_basis"]
 
 
 def test_cleaning_duplicate_kinds_distinguished(analysis_bundle, sample_frame):
