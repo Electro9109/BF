@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any, Iterable
 import numpy as np
 import pandas as pd
 
+from parse.dtype_utils import is_text_like
+
 if TYPE_CHECKING:
     from parse.cleaning import ChangeRecord
 
@@ -108,7 +110,7 @@ def compute_distribution_shifts(
         is_categorical_or_bool = (
             pd.api.types.is_bool_dtype(s_before)
             or isinstance(s_before.dtype, pd.CategoricalDtype)
-            or (s_before.dtype == object and s_before.dropna().nunique() <= max(20, int(len(s_before) * 0.2)))
+            or (is_text_like(s_before) and s_before.dropna().nunique() <= max(20, int(len(s_before) * 0.2)))
         )
 
         if is_numeric:

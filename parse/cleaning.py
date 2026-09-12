@@ -24,6 +24,7 @@ from parse.cleaning_impact import (
     compute_distribution_shifts,
     derive_information_loss_notes,
 )
+from parse.dtype_utils import is_text_like
 
 
 @dataclass(frozen=True)
@@ -318,7 +319,7 @@ class DataCleaner:
             # --- Mixed values (Discrepancy 3: port heuristic and deduplicate) ---
             mixed_detected = False
             numeric_fraction = pd.to_numeric(series.dropna(), errors="coerce").notna().mean() if series.notna().any() else 0
-            if series.dtype == object and 0 < numeric_fraction < 1:
+            if is_text_like(series) and 0 < numeric_fraction < 1:
                 issues.append(CleaningIssue(
                     f"mixed_values_{column}", "mixed_values", "warning",
                     f"Column '{column}' mixes numeric-like and non-numeric values.",

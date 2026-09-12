@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from parse.core.contracts import EvidenceRef, Issue, Provenance, SourceRef
+from parse.dtype_utils import is_text_like
 
 
 @dataclass(frozen=True)
@@ -280,7 +281,7 @@ class DataUnderstanding:
         elif inferred_type in {"categorical", "text"}:
             counts = non_null.astype(str).value_counts().head(5)
             summary = {"top_values": {str(key): int(value) for key, value in counts.items()}}
-        if series.dtype == object and len(non_null):
+        if is_text_like(series) and len(non_null):
             numeric_fraction = float(pd.to_numeric(non_null, errors="coerce").notna().mean())
             if 0 < numeric_fraction < 1:
                 summary["numeric_parse_fraction"] = numeric_fraction
@@ -321,7 +322,7 @@ class DataUnderstanding:
             return "numeric", 1.0
         if pd.api.types.is_datetime64_any_dtype(series):
             return "temporal", 1.0
-        if series.dtype == object:
+        if is_text_like(series):
             non_null = series.dropna()
             if len(non_null):
                 parsed_dates = pd.to_datetime(non_null, errors="coerce", format="mixed")

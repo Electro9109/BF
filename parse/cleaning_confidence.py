@@ -14,6 +14,8 @@ from typing import Any, Iterable
 import numpy as np
 import pandas as pd
 
+from parse.dtype_utils import is_text_like
+
 # The 30-observation floor is a conventional rule-of-thumb for a stable
 # median/mode estimate, not a mathematically proven threshold.
 MIN_STABLE_SAMPLE_SIZE = 30  # rule-of-thumb, revisit
@@ -135,7 +137,7 @@ def compute_missingness_association(
         is_categorical = (
             isinstance(other_series.dtype, pd.CategoricalDtype)
             or pd.api.types.is_bool_dtype(other_series)
-            or pd.api.types.is_object_dtype(other_series)
+            or is_text_like(other_series)
         )
 
         if is_numeric:

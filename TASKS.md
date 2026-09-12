@@ -984,6 +984,52 @@ in `_detect_with_context`.**
 
 ---
 
+## Task 7 — Pandas 3.x-Safe Dtype Classification
+**Status: COMPLETE.** Created `parse/dtype_utils.py` with exclusion-based
+classification primitives (`is_numeric`, `is_boolean`, `is_datetime`,
+`is_categorical_dtype_`, `is_text_like`, `is_empty_or_all_missing`).
+Replaced fragile `dtype == object` checks at all 5 confirmed call sites:
+- `parse/eda.py:283`
+- `parse/eda.py:324`
+- `parse/cleaning.py:321`
+- `parse/cleaning_confidence.py:138`
+- `parse/cleaning_impact.py:111`
+`parse/analysis.py` untouched; unit tests in `tests/test_dtype_utils.py`
+confirm `object` and nullable `string` dtypes classify identically;
+full suite green (116 passed, 0 failures). Do not reopen — file bugs as new tasks.
+
+### Objective
+Replace every fragile `dtype == object` / `pd.api.types.is_object_dtype(...)`
+check in the analysis/cleaning subsystem with a version-robust
+classification utility, and fix the resulting behavior everywhere it's
+currently silently broken.
+
+### Scope
+**In scope:**
+- A new `parse/dtype_utils.py` with exclusion-based, version-robust
+  classification primitives.
+- Updating the five confirmed call sites to use them.
+- Tests in `tests/test_dtype_utils.py` exercising dtype variation.
+
+**Out of scope:**
+- `parse/analysis.py` -- confirmed already correct, left untouched.
+- Any change to cardinality/length/fraction heuristic thresholds.
+- Requirements.txt pandas version pinning.
+
+### Acceptance Criteria
+- [x] `parse/dtype_utils.py` exists with all five primitives,
+      exclusion-based, documented.
+- [x] All five confirmed call sites updated; `parse/analysis.py`
+      untouched.
+- [x] No threshold values changed anywhere.
+- [x] `pd.Series(..., dtype=object)` and `pd.Series(..., dtype="string")`
+      both classify identically through every primitive.
+- [x] Every test passes unmodified across the entire test suite.
+- [x] Full suite green (116 passed).
+- [x] No pandas version pin added.
+
+---
+
 ## Parking Lot
 *(Anything noticed while working that's out of scope for the current
 task goes here, not into the current task's diff.)*
@@ -994,7 +1040,7 @@ task goes here, not into the current task's diff.)*
 
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(All six originally-planned tasks are now complete.)*
+*(Tasks 1-7 are now complete.)*
 
 
 
