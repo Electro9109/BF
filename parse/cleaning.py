@@ -204,98 +204,31 @@ class DataCleaner:
     def __init__(self, source: SourceRef | None = None):
         self.source = source or SourceRef("in_memory_dataset", "user_input", label="DataFrame")
 
-    def detect(self, frame: pd.DataFrame, eda_result: OldEDAResult | None = None, context: CleaningContext | None = None) -> tuple[list[CleaningIssue], list[TransformationProposal]]:
+    def detect(
+        self,
+        frame: pd.DataFrame,
+        eda_result: Any | None = None,
+        context: CleaningContext | None = None,
+    ) -> tuple[list[CleaningIssue], list[TransformationProposal]]:
         self._validate_frame(frame)
-        
-        if context is not None:
-            return self._detect_with_context(frame, context)
-            
-        # Backwards compatibility path
-        return self._detect_legacy(frame, eda_result)
+        return self._detect(frame, eda_result=eda_result, context=context)
 
-    def _detect_legacy(self, frame: pd.DataFrame, eda_result: OldEDAResult | None) -> tuple[list[CleaningIssue], list[TransformationProposal]]:
+    def _detect(
+        self,
+        frame: pd.DataFrame,
+        eda_result: Any | None = None,
+        context: CleaningContext | None = None,
+    ) -> tuple[list[CleaningIssue], list[TransformationProposal]]:
         issues: list[CleaningIssue] = []
         proposals: list[TransformationProposal] = []
 
-        duplicate_rows = tuple(frame.index[frame.duplicated(keep="first")])
-        if duplicate_rows:
-            issue_id = "duplicate_rows"
-            issues.append(CleaningIssue(
-                issue_id, "duplicate_rows", "warning",
-                f"{len(duplicate_rows)} duplicate row(s) can be reviewed.",
-                row_indices=duplicate_rows, method="pandas.duplicated",
-                assumptions=("Rows are duplicates across all columns.",),
-            ))
-            dupe_conf, dupe_basis = score_duplicate_removal(frame, duplicate_rows)
-            proposals.append(TransformationProposal(
-                "remove_duplicate_rows", issue_id, "remove_duplicates",
-                method="keep_first", rationale="Remove exact duplicate observations while retaining the first row.",
-                confidence=dupe_conf, parameters={"confidence_basis": dupe_basis},
-            ))
+        # 1. Resolve shared inputs
+        resolved_eda = eda_result or (context.eda_result if context else None)
+        resolved_purpose = context.purpose if context else None  # None means "not specified", distinct from "unknown"
+        attribute_profiles = context.attribute_profiles if context else None
+        source_id = context.source_ref.source_id if context else self.source.source_id
 
-        for column in frame.columns:
-            series = frame[column]
-            missing_rows = tuple(series.index[series.isna()])
-            if missing_rows:
-                issue_id = f"missing_{column}"
-                issues.append(CleaningIssue(
-                    issue_id, "missing_values", "warning",
-                    f"Column '{column}' has {len(missing_rows)} missing value(s).",
-                    field=str(column), row_indices=missing_rows, method="isna",
-                    assumptions=("Missingness is not assumed to be random.", "Imputation requires user approval."),
-                ))
-                non_null = series.dropna()
-                if len(non_null):
-                    numeric = pd.api.types.is_numeric_dtype(series)
-                    method = "median" if numeric else "mode"
-                    value = float(non_null.median()) if numeric else non_null.mode().iloc[0]
-                    imp_conf, imp_basis = score_imputation(series, frame=frame, column_name=str(column))
-                    proposals.append(TransformationProposal(
-                        f"impute_{column}", issue_id, "impute_missing",
-                        field=str(column), method=method, parameters={"value": value, "confidence_basis": imp_basis},
-                        confidence=imp_conf,
-                        rationale=f"Fill missing '{column}' values with the observed {method}; review whether this is scientifically appropriate.",
-                    ))
-
-            numeric_fraction = pd.to_numeric(series.dropna(), errors="coerce").notna().mean() if series.notna().any() else 0
-            if series.dtype == object and 0 < numeric_fraction < 1:
-                issues.append(CleaningIssue(
-                    f"mixed_values_{column}", "mixed_values", "warning",
-                    f"Column '{column}' mixes numeric-like and non-numeric values.",
-                    field=str(column), method="numeric_parse_fraction",
-                    assumptions=("Non-numeric values may be meaningful domain values.", "No conversion is proposed without domain review."),
-                ))
-
-            if eda_result is not None:
-                outlier = next(
-                    (
-                        finding
-                        for finding in eda_result.findings
-                        if getattr(finding, "finding_id", "") in {f"outliers_{column}", f"unusual:{column}"}
-                    ),
-                    None,
-                )
-                if outlier is not None:
-                    msg = getattr(outlier, "message", None) or getattr(
-                        outlier, "observation", f"Column '{column}' contains outlier(s)."
-                    )
-                    issues.append(CleaningIssue(
-                        f"outliers_{column}", "statistical_outliers", "info",
-                        msg, field=str(column), method="IQR",
-                        assumptions=("An outlier is not automatically a data error.", "No values are removed automatically."),
-                    ))
-
-        return issues, proposals
-
-    def _detect_with_context(self, frame: pd.DataFrame, context: CleaningContext) -> tuple[list[CleaningIssue], list[TransformationProposal]]:
-        issues: list[CleaningIssue] = []
-        proposals: list[TransformationProposal] = []
-        
-        source_id = context.source_ref.source_id
-        
-        # 1. Duplicates (from structure analysis)
-        # Note: Analysis doesn't explicitly return duplicate row indices, so we still check it,
-        # but we use structural knowledge for identifiers.
+        # 2. Duplicate rows detection (exact rows across all columns)
         duplicate_rows = tuple(frame.index[frame.duplicated(keep="first")])
         if duplicate_rows:
             issue_id = "duplicate_rows"
@@ -314,91 +247,151 @@ class DataCleaner:
                 confidence=dupe_conf,
                 parameters={"confidence_basis": dupe_basis},
             ))
-            
-        # Detect conflicting identifiers based on candidate keys from structure
-        keys = context.eda_result.structural_profile.candidate_index_columns
-        for key in keys:
-            if key in frame.columns:
-                dupe_keys = frame.index[frame.duplicated(subset=[key], keep=False)]
-                if len(dupe_keys) > len(duplicate_rows):
-                    issues.append(CleaningIssue(
-                        f"conflicting_identifier_{key}", "duplicate_identifier", "warning",
-                        f"Candidate identifier '{key}' has repeated values across non-exact duplicate rows.",
-                        field=key, row_indices=tuple(dupe_keys), method="structural_duplicate",
-                        duplicate_kind="conflicting_identifier",
-                        evidence=(EvidenceRef(source_id, "derived_from", locator=key),)
-                    ))
 
-        # 2. Consume Attribute Profiles
-        for attr_name, profile in context.attribute_profiles.items():
-            if attr_name not in frame.columns:
-                continue
-                
-            # Missingness
-            if profile.missing_count > 0:
-                missing_rows = tuple(frame.index[frame[attr_name].isna()])
-                issue_id = f"missing_{attr_name}"
+        # 3. Discrepancy 1: Candidate-identifier conflict detection
+        # Enabled whenever structural_profile is reachable from resolved_eda
+        if resolved_eda is not None and hasattr(resolved_eda, "structural_profile"):
+            keys = resolved_eda.structural_profile.candidate_index_columns
+            for key in keys:
+                if key in frame.columns:
+                    dupe_keys = frame.index[frame.duplicated(subset=[key], keep=False)]
+                    if len(dupe_keys) > len(duplicate_rows):
+                        issues.append(CleaningIssue(
+                            f"conflicting_identifier_{key}", "duplicate_identifier", "warning",
+                            f"Candidate identifier '{key}' has repeated values across non-exact duplicate rows.",
+                            field=key, row_indices=tuple(dupe_keys), method="structural_duplicate",
+                            duplicate_kind="conflicting_identifier",
+                            evidence=(EvidenceRef(source_id, "derived_from", locator=key),),
+                        ))
+
+        # 4. Per-column inspection: missingness, mixed values, quality findings
+        for column in frame.columns:
+            series = frame[column]
+            attr_prof = attribute_profiles.get(column) if attribute_profiles else None
+
+            # --- Missing values ---
+            missing_rows = tuple(series.index[series.isna()])
+            if missing_rows:
+                issue_id = f"missing_{column}"
+                missing_count = len(missing_rows)
+                method = "analysis_profile" if attr_prof else "isna"
+                missingness_kind = (attr_prof.missingness_kind or "MISSING") if attr_prof else None
+                evidence = (EvidenceRef(source_id, "derived_from", locator=str(column)),) if attr_prof else ()
+
                 issues.append(CleaningIssue(
                     issue_id, "missing_values", "warning",
-                    f"Column '{attr_name}' has {profile.missing_count} missing value(s).",
-                    field=attr_name, row_indices=missing_rows, method="analysis_profile",
+                    f"Column '{column}' has {missing_count} missing value(s).",
+                    field=str(column), row_indices=missing_rows, method=method,
                     assumptions=("Missingness is not assumed to be random.", "Imputation requires user approval."),
-                    missingness_kind=profile.missingness_kind or "MISSING",
-                    evidence=(EvidenceRef(source_id, "derived_from", locator=attr_name),)
+                    missingness_kind=missingness_kind,
+                    evidence=evidence,
                 ))
-                
-                # Propose based on purpose
-                if context.purpose != "unknown":
-                     non_null = frame[attr_name].dropna()
-                     if len(non_null):
-                         if profile.observed_type == "numeric":
-                             val = float(non_null.median())
-                             method = "median"
-                         else:
-                             val = non_null.mode().iloc[0]
-                             method = "mode"
-                             
-                         imp_conf, imp_basis = score_imputation(frame[attr_name], frame=frame, column_name=attr_name)
-                         proposals.append(TransformationProposal(
-                            f"impute_{attr_name}", issue_id, "impute_missing",
-                            target=attr_name, field=attr_name, method=method,
+
+                # Discrepancy 2: Imputation purpose gating
+                # Propose whenever non-null values exist, unless resolved_purpose == "unknown"
+                if resolved_purpose != "unknown":
+                    non_null = series.dropna()
+                    if len(non_null):
+                        if attr_prof and attr_prof.observed_type:
+                            is_numeric = attr_prof.observed_type == "numeric"
+                        else:
+                            is_numeric = pd.api.types.is_numeric_dtype(series)
+
+                        imp_method = "median" if is_numeric else "mode"
+                        val = float(non_null.median()) if is_numeric else non_null.mode().iloc[0]
+
+                        imp_conf, imp_basis = score_imputation(series, frame=frame, column_name=str(column))
+                        rationale = (
+                            f"Fill missing '{column}' values with the observed {imp_method}. Purpose: {context.purpose}."
+                            if context
+                            else f"Fill missing '{column}' values with the observed {imp_method}; review whether this is scientifically appropriate."
+                        )
+                        proposals.append(TransformationProposal(
+                            f"impute_{column}", issue_id, "impute_missing",
+                            target=str(column), field=str(column), method=imp_method,
                             parameters={"value": val, "confidence_basis": imp_basis},
-                            rationale=f"Fill missing '{attr_name}' values with the observed {method}. Purpose: {context.purpose}.",
+                            rationale=rationale,
                             affected_records=missing_rows,
                             confidence=imp_conf,
                         ))
 
-            # Quality Issues (mixed types, empty)
-            for q_issue in profile.quality_issues:
-                if q_issue.get("finding_id", "").startswith("mixed_"):
-                    # Actually, parsing analysis doesn't generate "mixed_" natively yet, but we prepare for it
+            # --- Mixed values (Discrepancy 3: port heuristic and deduplicate) ---
+            mixed_detected = False
+            numeric_fraction = pd.to_numeric(series.dropna(), errors="coerce").notna().mean() if series.notna().any() else 0
+            if series.dtype == object and 0 < numeric_fraction < 1:
+                issues.append(CleaningIssue(
+                    f"mixed_values_{column}", "mixed_values", "warning",
+                    f"Column '{column}' mixes numeric-like and non-numeric values.",
+                    field=str(column), method="numeric_parse_fraction",
+                    assumptions=("Non-numeric values may be meaningful domain values.", "No conversion is proposed without domain review."),
+                ))
+                mixed_detected = True
+
+            if attr_prof:
+                for q_issue in attr_prof.quality_issues:
+                    if q_issue.get("finding_id", "").startswith("mixed_"):
+                        if not mixed_detected:
+                            issues.append(CleaningIssue(
+                                f"mixed_{column}", "mixed_values", "warning",
+                                q_issue.get("observation", "Mixed types detected"),
+                                field=str(column), method="analysis_finding",
+                                evidence=(EvidenceRef(source_id, "derived_from", locator=str(column)),),
+                            ))
+                            mixed_detected = True
+
+        # 5. Outliers (Discrepancy 4: iterate all matching findings per column from resolved_eda)
+        if resolved_eda is not None and hasattr(resolved_eda, "findings"):
+            for column in frame.columns:
+                col_str = str(column)
+                matching_findings = [
+                    f for f in resolved_eda.findings
+                    if (
+                        getattr(f, "finding_id", "") in {f"outliers_{col_str}", f"unusual:{col_str}"}
+                        or (
+                            getattr(f, "subject", None) == col_str
+                            and (
+                                getattr(f, "category", "") in {"distribution", "anomaly"}
+                                or getattr(f, "kind", "") == "outlier"
+                                or "unusual" in getattr(f, "finding_id", "")
+                                or "outlier" in getattr(f, "finding_id", "")
+                            )
+                        )
+                    )
+                ]
+
+                for idx, finding in enumerate(matching_findings):
+                    finding_id = getattr(finding, "finding_id", f"outliers_{col_str}")
+                    issue_id = finding_id if idx == 0 else f"{finding_id}_{idx}"
+                    msg = getattr(finding, "message", None) or getattr(
+                        finding, "observation", f"Column '{col_str}' contains outlier(s)."
+                    )
+                    method = getattr(finding, "method", "IQR")
+                    assumptions = tuple(getattr(finding, "assumptions", (
+                        "An outlier is not automatically a data error.",
+                        "No values are removed automatically.",
+                    )))
+                    limitations = tuple(getattr(finding, "limitations", ()))
+                    evidence = tuple(getattr(finding, "evidence", ()))
+
                     issues.append(CleaningIssue(
-                        f"mixed_{attr_name}", "mixed_values", "warning",
-                        q_issue.get("observation", "Mixed types detected"),
-                        field=attr_name, method="analysis_finding",
-                        evidence=(EvidenceRef(source_id, "derived_from", locator=attr_name),)
+                        issue_id, "statistical_outliers", "info",
+                        msg, field=col_str, method=method,
+                        assumptions=assumptions,
+                        limitations=limitations,
+                        evidence=evidence,
                     ))
-                    
-            # Anomalies (Outliers)
-            for anomaly in profile.anomalies:
-                 issue_id = anomaly.get("finding_id", f"outliers_{attr_name}")
-                 issues.append(CleaningIssue(
-                    issue_id, "statistical_outliers", "info",
-                    anomaly.get("observation", "Outliers detected"),
-                    field=attr_name, method=anomaly.get("method", "IQR"),
-                    assumptions=tuple(anomaly.get("assumptions", [])),
-                    limitations=tuple(anomaly.get("limitations", [])),
-                    evidence=(EvidenceRef(source_id, "derived_from", locator=attr_name),)
-                 ))
-                 
-                 outlier_conf, outlier_basis = score_outlier_flag(frame[attr_name])
-                 proposals.append(TransformationProposal(
-                    f"investigate_{attr_name}_outliers", issue_id, "flag_for_review",
-                    target=attr_name, field=attr_name, method="flag",
-                    parameters={"confidence_basis": outlier_basis},
-                    rationale="Statistically unusual values should be investigated before exclusion.",
-                    confidence=outlier_conf,
-                 ))
+
+                    outlier_conf, outlier_basis = score_outlier_flag(frame[column])
+                    proposal_id = (
+                        f"investigate_{col_str}_outliers" if idx == 0 else f"investigate_{col_str}_outliers_{idx}"
+                    )
+                    proposals.append(TransformationProposal(
+                        proposal_id, issue_id, "flag_for_review",
+                        target=col_str, field=col_str, method="flag",
+                        parameters={"confidence_basis": outlier_basis},
+                        rationale="Statistically unusual values should be investigated before exclusion.",
+                        confidence=outlier_conf,
+                    ))
 
         return issues, proposals
 

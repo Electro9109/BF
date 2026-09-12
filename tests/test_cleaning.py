@@ -117,4 +117,126 @@ def test_outlier_proposal_contains_dual_method_basis():
     assert basis["raw_mad"] == 10.0
     assert "per_row_mad_distances" in basis
     assert "per_row_agreement" in basis
+
+
+# --- Task 6: Unified Detection Regression Tests ---
+
+
+def test_discrepancy_1_candidate_identifier_with_bare_eda():
+    # Proves Discrepancy 1 resolution: candidate-identifier conflict detection fires
+    # when only bare eda_result is passed (no CleaningContext).
+    from parse.analysis import AnalysisOrchestrator, AnalysisRequest
+
+    frame = pd.DataFrame({
+        "id": [1, 2, 3, 1], # 'id' is a candidate identifier but has a conflict in non-exact duplicate rows
+        "val": [10, 20, 30, 40], # row 0 and 3 differ in 'val', so not an exact duplicate row
+    })
+    source = SourceRef("bare_eda_test", "csv")
+    eda = AnalysisOrchestrator().analyze(AnalysisRequest(frame, source))
+    assert "id" in eda.structural_profile.candidate_index_columns
+
+    cleaner = DataCleaner(source)
+    issues, proposals = cleaner.detect(frame, eda_result=eda)
+
+    candidate_issues = [i for i in issues if i.kind == "duplicate_identifier"]
+    assert len(candidate_issues) == 1
+    assert candidate_issues[0].field == "id"
+    assert candidate_issues[0].duplicate_kind == "conflicting_identifier"
+
+
+def test_discrepancy_2_purpose_gating_behavior():
+    # Proves Discrepancy 2 resolution:
+    # 1. Context-less callers (purpose=None) receive imputation proposals.
+    # 2. Context callers with purpose="unknown" have imputation suppressed.
+    # 3. Context callers with purpose="prediction" receive imputation proposals.
+    from parse.cleaning_api import create_cleaning_context, propose_cleaning
+    from parse.analysis import AnalysisRequest
+    from parse.semantic_analysis import AnalysisPipeline
+
+    frame = pd.DataFrame({
+        "col": [1.0, 2.0, None, 4.0],
+    })
+    source = SourceRef("purpose_test", "csv")
+
+    # Context-less caller:
+    cleaner = DataCleaner(source)
+    issues_bare, props_bare = cleaner.detect(frame)
+    assert any(p.action == "impute_missing" for p in props_bare)
+
+    # Context with purpose="unknown":
+    bundle = AnalysisPipeline().analyze(AnalysisRequest(frame, source))
+    ctx_unknown = create_cleaning_context(bundle, purpose="unknown")
+    issues_unk, props_unk = propose_cleaning(ctx_unknown, frame)
+    assert any(i.kind == "missing_values" for i in issues_unk)
+    assert not any(p.action == "impute_missing" for p in props_unk)
+
+    # Context with purpose="prediction":
+    ctx_pred = create_cleaning_context(bundle, purpose="prediction")
+    issues_pred, props_pred = propose_cleaning(ctx_pred, frame)
+    assert any(p.action == "impute_missing" for p in props_pred)
+
+
+def test_discrepancy_3_mixed_values_detected_via_context_path():
+    # Proves Discrepancy 3 resolution:
+    # Context-path callers (full CleaningContext) now correctly detect mixed-type values
+    # via the ported numeric_fraction heuristic.
+    from parse.cleaning_api import create_cleaning_context, propose_cleaning
+    from parse.analysis import AnalysisRequest
+    from parse.semantic_analysis import AnalysisPipeline
+
+    frame = pd.DataFrame({
+        "mixed_col": ["1", "unknown", "1000", "2"],
+    })
+    source = SourceRef("mixed_test", "csv")
+    bundle = AnalysisPipeline().analyze(AnalysisRequest(frame, source))
+    context = create_cleaning_context(bundle, purpose="descriptive_analysis")
+
+    issues, proposals = propose_cleaning(context, frame)
+    mixed_issues = [i for i in issues if i.kind == "mixed_values"]
+    assert len(mixed_issues) == 1
+    assert mixed_issues[0].field == "mixed_col"
+    assert mixed_issues[0].method == "numeric_parse_fraction"
+
+
+def test_discrepancy_4_multiple_outlier_findings_per_column():
+    # Proves Discrepancy 4 resolution:
+    # Multiple matching outlier findings for a single column produce multiple issues and proposals.
+    from parse.analysis import Finding
+
+    frame = pd.DataFrame({
+        "val": [10.0, 11.0, 12.0, 10.0, 11.0, 100.0],
+    })
+    source = SourceRef("multi_outlier", "csv")
+
+    class MockEDA:
+        findings = [
+            Finding(
+                finding_id="outliers_val",
+                category="distribution",
+                subject="val",
+                observation="Primary IQR outliers detected",
+                method="IQR",
+                evidence=(),
+            ),
+            Finding(
+                finding_id="unusual:val",
+                category="anomaly",
+                subject="val",
+                observation="Secondary extreme distribution anomaly detected",
+                method="MAD",
+                evidence=(),
+            ),
+        ]
+
+    cleaner = DataCleaner(source)
+    issues, proposals = cleaner.detect(frame, eda_result=MockEDA())
+
+    outlier_issues = [i for i in issues if i.kind == "statistical_outliers"]
+    outlier_proposals = [p for p in proposals if p.action == "flag_for_review"]
+
+    assert len(outlier_issues) == 2
+    assert len(outlier_proposals) == 2
+    assert {i.issue_id for i in outlier_issues} == {"outliers_val", "unusual:val_1"}
+    assert {p.proposal_id for p in outlier_proposals} == {"investigate_val_outliers", "investigate_val_outliers_1"}
+
 

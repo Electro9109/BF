@@ -928,10 +928,73 @@ New function, e.g. `compute_missingness_association(frame, target_column) -> tup
 
 ---
 
+## Task 6 — Collapse `_detect_legacy` and `_detect_with_context` into one path
+**Status: COMPLETE.** Consolidated `_detect_legacy` and `_detect_with_context`
+into a single unified `_detect(frame, eda_result=None, context=None)` method.
+Resolved all 4 discrepancies per specification:
+1. Candidate-identifier conflict detection runs whenever `structural_profile` is
+   reachable from `eda_result` or `context.eda_result`.
+2. Purpose-gating for imputation is preserved with zero behavior change for existing
+   callers (imputation is proposed unless `purpose == "unknown"` explicitly).
+3. Mixed-value detection bug fixed for `CleaningContext` callers by porting the
+   `numeric_fraction` heuristic and deduplicating against `quality_issues`.
+4. Outlier detection scans `resolved_eda.findings` for all matching findings per column.
+`_detect_legacy` and `_detect_with_context` deleted; full test suite green (110 passed).
+Do not reopen — file bugs as new tasks.
+
+### Objective
+`DataCleaner` currently has two independent detection methods that
+`detect()` branches between based on whether a `CleaningContext` is
+supplied. Five tasks' worth of confidence/impact/re-detection logic has
+now been layered onto both in parallel. Collapse them into a single
+detection method with no duplicated logic and no divergent behavior
+that isn't deliberate and documented.
+
+### Why — audit findings first (read before writing any code)
+**Discrepancy 1 — candidate-identifier conflict detection exists only
+in `_detect_with_context`.**
+> **Resolution:** Rewired to run whenever `structural_profile` is reachable
+> (either via `eda_result.structural_profile` or `context.eda_result.structural_profile`).
+
+**Discrepancy 2 — imputation proposals are purpose-gated in `_detect_with_context`.**
+> **Resolution:** Propose whenever non-null values exist, unless `resolved_purpose == "unknown"`.
+> Zero behavior change for context-less callers.
+
+**Discrepancy 3 — mixed-value detection is effectively dead code in `_detect_with_context`.**
+> **Resolution:** Ported the `numeric_fraction` heuristic into the unified method
+> and deduplicated against `quality_issues`.
+
+**Discrepancy 4 — outlier detection reads two different sources.**
+> **Resolution:** Unified on iterating all matching findings per column from `resolved_eda.findings`.
+
+### Acceptance Criteria
+- [x] Exactly one detection method exists in `DataCleaner`.
+- [x] Discrepancy 1 resolved: candidate-identifier detection runs
+      whenever any `eda_result` is reachable, in either entry mode.
+- [x] Discrepancy 2 resolved with zero behavior change for existing
+      callers (context-less callers still always get imputation
+      proposals; explicit `purpose == "unknown"` still suppresses them).
+- [x] Discrepancy 3 resolved: mixed-value detection now works
+      correctly for `CleaningContext`-based callers too.
+- [x] Discrepancy 4 resolved: outlier detection captures all matching
+      findings per column in both entry modes.
+- [x] `_detect_legacy` and `_detect_with_context` no longer exist.
+- [x] Full suite green; new regression tests for all four discrepancies
+      pass.
+
+---
+
+## Parking Lot
+*(Anything noticed while working that's out of scope for the current
+task goes here, not into the current task's diff.)*
+
+-
+
+---
+
 ## Upcoming (not started — for context only, do not work on these yet)
 
-- **Task 6** — Collapse `_detect_legacy` into `_detect_with_context`
-  once all call sites pass a `CleaningContext`, and delete the legacy
-  path.
+*(All six originally-planned tasks are now complete.)*
+
 
 
