@@ -78,6 +78,10 @@ def test_known_outlier():
     # Check that we propose to investigate, not delete
     flag_props = [p for p in proposals if p.action == "flag_for_review"]
     assert len(flag_props) == 1
+    assert flag_props[0].confidence is not None
+    assert flag_props[0].confidence >= 0.5
+    assert "confidence_basis" in flag_props[0].parameters
+    assert flag_props[0].parameters["confidence_basis"]["method"] == "IQR_1.5"
 
 
 def test_ambiguous_semantic_attribute():

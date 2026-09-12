@@ -14,6 +14,16 @@ import pandas as pd
 from parse.core.contracts import EvidenceRef, Provenance, SourceRef
 from parse.eda import EDAResult as OldEDAResult
 from parse.cleaning_context import CleaningContext
+from parse.cleaning_confidence import (
+    score_duplicate_removal,
+    score_imputation,
+    score_outlier_flag,
+)
+from parse.analysis import AnalysisOrchestrator, AnalysisRequest
+from parse.cleaning_impact import (
+    compute_distribution_shifts,
+    derive_information_loss_notes,
+)
 
 
 @dataclass(frozen=True)
@@ -119,6 +129,7 @@ class ValidationResult:
     before_snapshot: QualitySnapshot
     after_snapshot: QualitySnapshot
     comparison: dict[str, Any]
+    limitations: list[str] = dataclass_field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -127,6 +138,7 @@ class ValidationResult:
             "before_snapshot": self.before_snapshot.to_dict(),
             "after_snapshot": self.after_snapshot.to_dict(),
             "comparison": self.comparison,
+            "limitations": self.limitations,
         }
 
 
@@ -214,9 +226,11 @@ class DataCleaner:
                 row_indices=duplicate_rows, method="pandas.duplicated",
                 assumptions=("Rows are duplicates across all columns.",),
             ))
+            dupe_conf, dupe_basis = score_duplicate_removal(frame, duplicate_rows)
             proposals.append(TransformationProposal(
                 "remove_duplicate_rows", issue_id, "remove_duplicates",
                 method="keep_first", rationale="Remove exact duplicate observations while retaining the first row.",
+                confidence=dupe_conf, parameters={"confidence_basis": dupe_basis},
             ))
 
         for column in frame.columns:
@@ -235,9 +249,11 @@ class DataCleaner:
                     numeric = pd.api.types.is_numeric_dtype(series)
                     method = "median" if numeric else "mode"
                     value = float(non_null.median()) if numeric else non_null.mode().iloc[0]
+                    imp_conf, imp_basis = score_imputation(series)
                     proposals.append(TransformationProposal(
                         f"impute_{column}", issue_id, "impute_missing",
-                        field=str(column), method=method, parameters={"value": value},
+                        field=str(column), method=method, parameters={"value": value, "confidence_basis": imp_basis},
+                        confidence=imp_conf,
                         rationale=f"Fill missing '{column}' values with the observed {method}; review whether this is scientifically appropriate.",
                     ))
 
@@ -251,11 +267,21 @@ class DataCleaner:
                 ))
 
             if eda_result is not None:
-                outlier = next((finding for finding in eda_result.findings if finding.finding_id == f"outliers_{column}"), None)
+                outlier = next(
+                    (
+                        finding
+                        for finding in eda_result.findings
+                        if getattr(finding, "finding_id", "") in {f"outliers_{column}", f"unusual:{column}"}
+                    ),
+                    None,
+                )
                 if outlier is not None:
+                    msg = getattr(outlier, "message", None) or getattr(
+                        outlier, "observation", f"Column '{column}' contains outlier(s)."
+                    )
                     issues.append(CleaningIssue(
                         f"outliers_{column}", "statistical_outliers", "info",
-                        outlier.message, field=str(column), method="IQR",
+                        msg, field=str(column), method="IQR",
                         assumptions=("An outlier is not automatically a data error.", "No values are removed automatically."),
                     ))
 
@@ -280,10 +306,13 @@ class DataCleaner:
                 assumptions=("Rows are duplicates across all columns.",),
                 duplicate_kind="exact",
             ))
+            dupe_conf, dupe_basis = score_duplicate_removal(frame, duplicate_rows)
             proposals.append(TransformationProposal(
                 "remove_duplicate_rows", issue_id, "remove_duplicates",
                 method="keep_first", rationale="Remove exact duplicate observations while retaining the first row.",
                 affected_records=duplicate_rows,
+                confidence=dupe_conf,
+                parameters={"confidence_basis": dupe_basis},
             ))
             
         # Detect conflicting identifiers based on candidate keys from structure
@@ -329,11 +358,14 @@ class DataCleaner:
                              val = non_null.mode().iloc[0]
                              method = "mode"
                              
+                         imp_conf, imp_basis = score_imputation(frame[attr_name])
                          proposals.append(TransformationProposal(
                             f"impute_{attr_name}", issue_id, "impute_missing",
-                            target=attr_name, field=attr_name, method=method, parameters={"value": val},
+                            target=attr_name, field=attr_name, method=method,
+                            parameters={"value": val, "confidence_basis": imp_basis},
                             rationale=f"Fill missing '{attr_name}' values with the observed {method}. Purpose: {context.purpose}.",
                             affected_records=missing_rows,
+                            confidence=imp_conf,
                         ))
 
             # Quality Issues (mixed types, empty)
@@ -359,10 +391,13 @@ class DataCleaner:
                     evidence=(EvidenceRef(source_id, "derived_from", locator=attr_name),)
                  ))
                  
+                 outlier_conf, outlier_basis = score_outlier_flag(frame[attr_name])
                  proposals.append(TransformationProposal(
                     f"investigate_{attr_name}_outliers", issue_id, "flag_for_review",
                     target=attr_name, field=attr_name, method="flag",
+                    parameters={"confidence_basis": outlier_basis},
                     rationale="Statistically unusual values should be investigated before exclusion.",
+                    confidence=outlier_conf,
                  ))
 
         return issues, proposals
@@ -422,22 +457,86 @@ class DataCleaner:
         before_snap = self._snapshot(original)
         after_snap = self._snapshot(cleaned)
         
+        # Re-detect issues on cleaned frame for ValidationResult
+        newly_introduced: list[str] = []
+        validation_limitations: list[str] = []
+
+        if len(cleaned) == 0:
+            validation_limitations.append("Re-detection for newly introduced issues skipped: cleaned dataset has 0 rows.")
+        else:
+            try:
+                fresh_source = SourceRef(
+                    self.source.source_id,
+                    self.source.source_type,
+                    label=f"{self.source.label} (post-cleaning)",
+                )
+                fresh_eda = AnalysisOrchestrator().analyze(AnalysisRequest(cleaned, fresh_source))
+                cleaned_issues, _ = self.detect(cleaned, eda_result=fresh_eda)
+
+                # Separately reconcile structural/candidate-identifier issues on cleaned
+                cleaned_duplicate_rows = tuple(cleaned.index[cleaned.duplicated(keep="first")])
+                candidate_keys = fresh_eda.structural_profile.candidate_index_columns
+                for key in candidate_keys:
+                    if key in cleaned.columns:
+                        dupe_keys = cleaned.index[cleaned.duplicated(subset=[key], keep=False)]
+                        if len(dupe_keys) > len(cleaned_duplicate_rows):
+                            cleaned_issues.append(
+                                CleaningIssue(
+                                    f"conflicting_identifier_{key}",
+                                    "duplicate_identifier",
+                                    "warning",
+                                    f"Candidate identifier '{key}' has repeated values across non-exact duplicate rows.",
+                                    field=key,
+                                    row_indices=tuple(dupe_keys),
+                                    method="structural_duplicate",
+                                    duplicate_kind="conflicting_identifier",
+                                    evidence=(EvidenceRef(fresh_source.source_id, "derived_from", locator=key),),
+                                )
+                            )
+
+                # Diff against original issues keyed by (kind, field)
+                original_keys = {(issue.kind, issue.field) for issue in issues}
+                seen_new_keys: set[tuple[str, str | None]] = set()
+                for c_issue in cleaned_issues:
+                    issue_key = (c_issue.kind, c_issue.field)
+                    if issue_key not in original_keys and issue_key not in seen_new_keys:
+                        seen_new_keys.add(issue_key)
+                        field_display = f"'{c_issue.field}'" if c_issue.field else "dataset"
+                        newly_introduced.append(
+                            f"New issue after cleaning — {c_issue.kind} in {field_display}: {c_issue.message}"
+                        )
+
+                validation_limitations.append(
+                    "Re-detection covers duplicates, missingness, mixed-type values, statistical outliers, "
+                    "and candidate-identifier conflicts on the cleaned frame; it does not re-run semantic "
+                    "candidate generation or human confirmation state, which are unaffected by transformation actions."
+                )
+            except Exception as exc:
+                newly_introduced = []
+                validation_limitations.append(
+                    f"Re-detection for newly introduced issues skipped due to unexpected error: {exc}"
+                )
+
         val_result = ValidationResult(
             intended_issues_addressed=[p.issue_id for p in proposals if p.status == "approved"],
-            newly_introduced_issues=[],
+            newly_introduced_issues=newly_introduced,
             before_snapshot=before_snap,
             after_snapshot=after_snap,
             comparison={
                 "row_count_diff": after_snap.row_count - before_snap.row_count,
-            }
+            },
+            limitations=validation_limitations,
         )
         
+        shifts = compute_distribution_shifts(original, cleaned)
+        loss_notes = derive_information_loss_notes(shifts, changes)
+
         impact = DownstreamImpact(
             changed_attributes=[c.field for c in changes if c.field],
             sample_size_before=before_snap.row_count,
             sample_size_after=after_snap.row_count,
-            distribution_shifts={},
-            potential_information_loss=[],
+            distribution_shifts=shifts,
+            potential_information_loss=loss_notes,
             limitations=["Downstream impact is approximated."]
         )
         

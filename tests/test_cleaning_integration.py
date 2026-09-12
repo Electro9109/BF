@@ -50,6 +50,9 @@ def test_cleaning_consumes_analysis_missingness_not_re_run(analysis_bundle, samp
     missing_proposals = [p for p in proposals if p.action == "impute_missing"]
     assert len(missing_proposals) == 1
     assert missing_proposals[0].field == "value"
+    assert missing_proposals[0].confidence is not None
+    assert "confidence_basis" in missing_proposals[0].parameters
+    assert missing_proposals[0].parameters["confidence_basis"]["missingness_pattern_checked"] is False
 
 
 def test_cleaning_duplicate_kinds_distinguished(analysis_bundle, sample_frame):
@@ -103,10 +106,41 @@ def test_before_after_validation_produced(analysis_bundle, sample_frame):
     assert result.validation is not None
     assert result.validation.before_snapshot.row_count == 5
     assert result.validation.after_snapshot.row_count == 4
+    assert result.validation.newly_introduced_issues == []
+    assert any("Re-detection covers duplicates" in lim for lim in result.validation.limitations)
     
     assert result.downstream_impact is not None
     assert result.downstream_impact.sample_size_before == 5
     assert result.downstream_impact.sample_size_after == 4
+    assert "value" in result.downstream_impact.distribution_shifts
+    assert "category" in result.downstream_impact.distribution_shifts
+    assert "id" in result.downstream_impact.distribution_shifts
+
+
+def test_imputation_downstream_impact_shift(analysis_bundle, sample_frame):
+    context = create_cleaning_context(analysis_bundle, purpose="prediction")
+    issues, proposals = propose_cleaning(context, sample_frame)
+
+    impute_prop = next(p for p in proposals if p.action == "impute_missing")
+
+    decisions = [
+        HumanDecision("d1", impute_prop.proposal_id, "APPROVE", {}, "Impute missing", "Test", "2026-09-11")
+    ]
+
+    result = apply_cleaning(sample_frame, decisions, context)
+
+    assert result.downstream_impact is not None
+    shifts = result.downstream_impact.distribution_shifts
+    assert "value" in shifts
+    val_shift = shifts["value"]
+    assert val_shift["kind"] == "numeric"
+    assert val_shift["sample_size_before"] == 4
+    assert val_shift["sample_size_after"] == 5
+    assert not val_shift["unchanged"]
+    # All columns present in both frames must be present in shifts
+    assert "id" in shifts
+    assert "category" in shifts
+    assert shifts["id"]["unchanged"] is True
 
 
 def test_purpose_unknown_stays_conservative(analysis_bundle, sample_frame):
@@ -116,3 +150,16 @@ def test_purpose_unknown_stays_conservative(analysis_bundle, sample_frame):
     # "unknown" purpose shouldn't propose imputation
     missing_proposals = [p for p in proposals if p.action == "impute_missing"]
     assert len(missing_proposals) == 0
+
+
+def test_validation_empty_cleaned_frame_degrades_gracefully():
+    from parse.cleaning import DataCleaner
+    source = SourceRef("empty_ds", "csv")
+    empty_df = pd.DataFrame(columns=["a", "b"])
+    cleaner = DataCleaner(source)
+    result = cleaner.clean(empty_df)
+
+    assert result.validation is not None
+    assert result.validation.newly_introduced_issues == []
+    assert any("cleaned dataset has 0 rows" in note for note in result.validation.limitations)
+

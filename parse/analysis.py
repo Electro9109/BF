@@ -134,6 +134,7 @@ class DistributionProfile:
     zero_fraction: float | None = None
     outlier_count: int = 0
     outlier_method: str | None = None
+    mad_outlier_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -314,14 +315,18 @@ class AnalysisOrchestrator:
         q1, q3 = float(q.loc[.25]), float(q.loc[.75])
         iqr = q3 - q1
         outliers = ((values < q1 - 1.5 * iqr) | (values > q3 + 1.5 * iqr)) if iqr else pd.Series(False, index=values.index)
+        mad = float(deviations.median())
+        scaled_mad = 1.4826 * mad
+        mad_outliers = (deviations > 3.0 * scaled_mad) if scaled_mad > 0 else pd.Series(False, index=values.index)
         return DistributionProfile(
             count=int(values.size), minimum=float(values.min()), maximum=float(values.max()),
             mean=float(values.mean()), median=median, variance=float(values.var(ddof=1)) if len(values) > 1 else 0.0,
             standard_deviation=float(values.std(ddof=1)) if len(values) > 1 else 0.0,
             quantiles={"q25": q1, "q50": median, "q75": q3}, iqr=iqr,
-            mad=float(deviations.median()), skewness=float(values.skew()) if len(values) >= 3 else None,
+            mad=mad, skewness=float(values.skew()) if len(values) >= 3 else None,
             kurtosis=float(values.kurt()) if len(values) >= 4 else None,
             zero_fraction=float((values == 0).mean()), outlier_count=int(outliers.sum()), outlier_method="IQR_1.5",
+            mad_outlier_count=int(mad_outliers.sum()),
         )
 
     @staticmethod
@@ -361,7 +366,8 @@ class AnalysisOrchestrator:
                 findings.append(Finding(f"unusual:{attribute.name}", "distribution", attribute.name,
                     f"{attribute.distribution.outlier_count} observation(s) are potentially unusual under the IQR rule.",
                     "IQR_1.5", evidence, limitations=("Unusualness is not evidence of error.",),
-                    result={"count": attribute.distribution.outlier_count}, knowledge_state="statistical"))
+                    result={"count": attribute.distribution.outlier_count, "mad_count": attribute.distribution.mad_outlier_count},
+                    knowledge_state="statistical"))
             if attribute.unique_count == 0:
                 findings.append(Finding(f"empty:{attribute.name}", "quality", attribute.name,
                     "The attribute contains no observed values.", "non_null_count", evidence,
