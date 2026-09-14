@@ -47,7 +47,7 @@ import pandas as pd
 
 from config.paths import DOCS_DIR, LLM_MODEL_DIR, ML_MODEL_DIR
 from config.retrieval import TOP_K
-from parse.eda import DataUnderstanding
+
 from parse.core.contracts import SourceRef
 from pipeline.rag_pipeline import answer_question, build_engine, load_model
 
@@ -867,7 +867,7 @@ with tab_pred:
 
 with tab_eda:
     st.markdown('<div class="section-header">Understand a Dataset</div>', unsafe_allow_html=True)
-    st.caption("Upload a CSV or Excel file to inspect its structure, quality, relationships, and possible next actions. The uploaded data is profiled read-only.")
+    st.caption("Upload a CSV or Excel file to inspect its structure, quality, and relationships. The uploaded data is profiled read-only.")
 
     eda_file = st.file_uploader(
         "Dataset",
@@ -906,8 +906,8 @@ with tab_eda:
         st.info("Upload a dataset and select Profile dataset to begin.")
     else:
         overview = st.columns(4)
-        overview[0].metric("Rows", eda_result.row_count)
-        overview[1].metric("Columns", eda_result.column_count)
+        overview[0].metric("Rows", eda_result.dataset_profile.row_count)
+        overview[1].metric("Columns", eda_result.dataset_profile.column_count)
         overview[2].metric("Findings", len(eda_result.findings))
         overview[3].metric("Modified", "No" if not eda_result.data_modified else "Yes")
 
@@ -961,20 +961,10 @@ with tab_eda:
                 if analysis_bundle.relevance is not None:
                     st.dataframe(pd.DataFrame([item.to_dict() for item in analysis_bundle.relevance.candidates]), use_container_width=True, hide_index=True)
 
-        applicable = [action for action in eda_result.next_actions if action.applicable]
-        if applicable:
-            st.markdown("### Possible Next Actions")
-            selected = st.selectbox(
-                "Choose a direction",
-                options=[action.action for action in applicable],
-                key="eda_next_action",
-            )
-            selected_reason = next(action.reason for action in applicable if action.action == selected)
-            st.info(selected_reason)
 
         with st.expander("Column profiles", expanded=True):
             st.dataframe(
-                pd.DataFrame([column.to_dict() for column in eda_result.columns]),
+                pd.DataFrame([column.to_dict() for column in eda_result.attributes]),
                 use_container_width=True,
                 hide_index=True,
             )
@@ -983,8 +973,8 @@ with tab_eda:
             finding_rows = [
                 {
                     "category": finding.category,
-                    "kind": finding.kind,
-                    "message": finding.message,
+                    "knowledge_state": finding.knowledge_state,
+                    "observation": finding.observation,
                     "limitations": " ".join(finding.limitations),
                 }
                 for finding in eda_result.findings
