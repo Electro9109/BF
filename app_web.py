@@ -294,10 +294,16 @@ def init_session():
         "analysis_bundle":    None,
         "analysis_context":   None,
         "cleaning_result":    None,
+        "eda_working_dataset": "original_upload",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+
+def _reset_cleaning_result_on_purpose_change() -> None:
+    """Drop stale cleaning output when purpose changes (proposals differ by purpose)."""
+    st.session_state.cleaning_result = None
 
 
 init_session()
@@ -888,6 +894,7 @@ with tab_eda:
                 eda_file.getvalue(),
             )
             st.session_state.eda_frame = frame
+            st.session_state.eda_working_dataset = "original_upload"
             st.session_state.analysis_bundle = analyze_loaded_dataset(
                 frame, source, analysis_objective or None,
             )
@@ -905,6 +912,14 @@ with tab_eda:
     if eda_result is None:
         st.info("Upload a dataset and select Profile dataset to begin.")
     else:
+        if st.session_state.get("eda_working_dataset") == "cleaned_adopted":
+            st.info(
+                "**Working dataset:** cleaned version adopted after an approved cleaning run. "
+                "Profile a new upload to return to the original file."
+            )
+        else:
+            st.caption("**Working dataset:** original upload (unchanged file).")
+
         overview = st.columns(4)
         overview[0].metric("Rows", eda_result.dataset_profile.row_count)
         overview[1].metric("Columns", eda_result.dataset_profile.column_count)
@@ -1003,7 +1018,8 @@ with tab_eda:
             "Intended Data Purpose",
             options=purpose_options,
             format_func=lambda x: x.replace("_", " ").title(),
-            key="cleaning_purpose"
+            key="cleaning_purpose",
+            on_change=_reset_cleaning_result_on_purpose_change,
         )
 
         if st.session_state.get("analysis_bundle"):
@@ -1082,6 +1098,36 @@ with tab_eda:
                     mime="application/json",
                     key="download_cleaning_result",
                 )
+
+                if st.button(
+                    "Use cleaned data for further analysis",
+                    type="secondary",
+                    key="adopt_cleaned_working_frame",
+                ):
+                    from parse.eda_ui import analyze_loaded_dataset
+
+                    adopted_frame = cleaning_result.cleaned
+                    base_source = st.session_state.analysis_bundle.eda.request.source
+                    adopted_label = base_source.label or base_source.source_id
+                    adopted_source = SourceRef(
+                        base_source.source_id,
+                        base_source.source_type,
+                        locator=base_source.locator,
+                        label=f"{adopted_label} (cleaned, adopted)",
+                    )
+                    objective = st.session_state.get("analysis_objective") or None
+                    st.session_state.eda_frame = adopted_frame
+                    st.session_state.eda_working_dataset = "cleaned_adopted"
+                    st.session_state.analysis_bundle = analyze_loaded_dataset(
+                        adopted_frame,
+                        adopted_source,
+                        objective,
+                    )
+                    st.session_state.eda_result = st.session_state.analysis_bundle.eda
+                    st.success(
+                        "Working dataset updated to the cleaned frame. "
+                        "Detected issues and dataset analysis below reflect this version."
+                    )
 
             st.download_button(
                 "Download EDA result (JSON)",
