@@ -63,7 +63,7 @@ class NextAction:
 
 
 @dataclass
-class EDAResult:
+class LegacyEDAResult:
     source: SourceRef
     row_count: int
     column_count: int
@@ -112,7 +112,7 @@ class DataUnderstanding:
         self.source = source or SourceRef("in_memory_dataset", "user_input", label="DataFrame")
 
     @classmethod
-    def from_file(cls, path: str | Path, sheet_name: str | int = 0) -> EDAResult:
+    def from_file(cls, path: str | Path, sheet_name: str | int = 0) -> LegacyEDAResult:
         """Load a supported structured file and return its profile.
 
         Only CSV and Excel are supported in this first capability slice.
@@ -138,7 +138,7 @@ class DataUnderstanding:
         )
         return cls(source).profile(frame)
 
-    def profile(self, frame: pd.DataFrame) -> EDAResult:
+    def profile(self, frame: pd.DataFrame) -> LegacyEDAResult:
         if not isinstance(frame, pd.DataFrame):
             raise TypeError("DataUnderstanding.profile expects a pandas DataFrame")
 
@@ -236,7 +236,7 @@ class DataUnderstanding:
             "Statistical relationships and outliers do not establish causation or data error.",
             "No values, rows, or columns were modified by profiling.",
         ]
-        return EDAResult(
+        return LegacyEDAResult(
             source=self.source,
             row_count=row_count,
             column_count=column_count,

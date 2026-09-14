@@ -12,7 +12,7 @@ from typing import Any, Iterable
 import pandas as pd
 
 from parse.core.contracts import EvidenceRef, Provenance, SourceRef
-from parse.eda import EDAResult as OldEDAResult
+from parse.eda import LegacyEDAResult as OldEDAResult
 from parse.cleaning_context import CleaningContext
 from parse.cleaning_confidence import (
     score_duplicate_removal,
@@ -396,6 +396,84 @@ class DataCleaner:
 
         return issues, proposals
 
+    def _validate_effects(
+        self,
+        original: pd.DataFrame,
+        cleaned: pd.DataFrame,
+        issues: list[CleaningIssue],
+        proposals: list[TransformationProposal],
+    ) -> ValidationResult:
+        before_snap = self._snapshot(original)
+        after_snap = self._snapshot(cleaned)
+
+        newly_introduced: list[str] = []
+        validation_limitations: list[str] = []
+
+        if len(cleaned) == 0:
+            validation_limitations.append("Re-detection for newly introduced issues skipped: cleaned dataset has 0 rows.")
+        else:
+            try:
+                fresh_source = SourceRef(
+                    self.source.source_id,
+                    self.source.source_type,
+                    label=f"{self.source.label} (post-cleaning)",
+                )
+                fresh_eda = AnalysisOrchestrator().analyze(AnalysisRequest(cleaned, fresh_source))
+                cleaned_issues, _ = self.detect(cleaned, eda_result=fresh_eda)
+
+                cleaned_duplicate_rows = tuple(cleaned.index[cleaned.duplicated(keep="first")])
+                candidate_keys = fresh_eda.structural_profile.candidate_index_columns
+                for key in candidate_keys:
+                    if key in cleaned.columns:
+                        dupe_keys = cleaned.index[cleaned.duplicated(subset=[key], keep=False)]
+                        if len(dupe_keys) > len(cleaned_duplicate_rows):
+                            cleaned_issues.append(
+                                CleaningIssue(
+                                    f"conflicting_identifier_{key}",
+                                    "duplicate_identifier",
+                                    "warning",
+                                    f"Candidate identifier '{key}' has repeated values across non-exact duplicate rows.",
+                                    field=key,
+                                    row_indices=tuple(dupe_keys),
+                                    method="structural_duplicate",
+                                    duplicate_kind="conflicting_identifier",
+                                    evidence=(EvidenceRef(fresh_source.source_id, "derived_from", locator=key),),
+                                )
+                            )
+
+                original_keys = {(issue.kind, issue.field) for issue in issues}
+                seen_new_keys: set[tuple[str, str | None]] = set()
+                for c_issue in cleaned_issues:
+                    issue_key = (c_issue.kind, c_issue.field)
+                    if issue_key not in original_keys and issue_key not in seen_new_keys:
+                        seen_new_keys.add(issue_key)
+                        field_display = f"'{c_issue.field}'" if c_issue.field else "dataset"
+                        newly_introduced.append(
+                            f"New issue after cleaning — {c_issue.kind} in {field_display}: {c_issue.message}"
+                        )
+
+                validation_limitations.append(
+                    "Re-detection covers duplicates, missingness, mixed-type values, statistical outliers, "
+                    "and candidate-identifier conflicts on the cleaned frame; it does not re-run semantic "
+                    "candidate generation or human confirmation state, which are unaffected by transformation actions."
+                )
+            except Exception as exc:
+                newly_introduced = []
+                validation_limitations.append(
+                    f"Re-detection for newly introduced issues skipped due to unexpected error: {exc}"
+                )
+
+        return ValidationResult(
+            intended_issues_addressed=[p.issue_id for p in proposals if p.status == "approved"],
+            newly_introduced_issues=newly_introduced,
+            before_snapshot=before_snap,
+            after_snapshot=after_snap,
+            comparison={
+                "row_count_diff": after_snap.row_count - before_snap.row_count,
+            },
+            limitations=validation_limitations,
+        )
+
     def clean(
         self, 
         frame: pd.DataFrame, 
@@ -435,7 +513,6 @@ class DataCleaner:
 
         for proposal in proposals:
             if proposal.proposal_id not in approved_ids:
-                # If a decision explicitly rejected it
                 if decisions and any(d.proposal_id == proposal.proposal_id and d.action == "REJECT" for d in decisions):
                     proposal.status = "rejected"
                 elif decisions and any(d.proposal_id == proposal.proposal_id and d.action == "DEFER" for d in decisions):
@@ -451,76 +528,7 @@ class DataCleaner:
         before_snap = self._snapshot(original)
         after_snap = self._snapshot(cleaned)
         
-        # Re-detect issues on cleaned frame for ValidationResult
-        newly_introduced: list[str] = []
-        validation_limitations: list[str] = []
-
-        if len(cleaned) == 0:
-            validation_limitations.append("Re-detection for newly introduced issues skipped: cleaned dataset has 0 rows.")
-        else:
-            try:
-                fresh_source = SourceRef(
-                    self.source.source_id,
-                    self.source.source_type,
-                    label=f"{self.source.label} (post-cleaning)",
-                )
-                fresh_eda = AnalysisOrchestrator().analyze(AnalysisRequest(cleaned, fresh_source))
-                cleaned_issues, _ = self.detect(cleaned, eda_result=fresh_eda)
-
-                # Separately reconcile structural/candidate-identifier issues on cleaned
-                cleaned_duplicate_rows = tuple(cleaned.index[cleaned.duplicated(keep="first")])
-                candidate_keys = fresh_eda.structural_profile.candidate_index_columns
-                for key in candidate_keys:
-                    if key in cleaned.columns:
-                        dupe_keys = cleaned.index[cleaned.duplicated(subset=[key], keep=False)]
-                        if len(dupe_keys) > len(cleaned_duplicate_rows):
-                            cleaned_issues.append(
-                                CleaningIssue(
-                                    f"conflicting_identifier_{key}",
-                                    "duplicate_identifier",
-                                    "warning",
-                                    f"Candidate identifier '{key}' has repeated values across non-exact duplicate rows.",
-                                    field=key,
-                                    row_indices=tuple(dupe_keys),
-                                    method="structural_duplicate",
-                                    duplicate_kind="conflicting_identifier",
-                                    evidence=(EvidenceRef(fresh_source.source_id, "derived_from", locator=key),),
-                                )
-                            )
-
-                # Diff against original issues keyed by (kind, field)
-                original_keys = {(issue.kind, issue.field) for issue in issues}
-                seen_new_keys: set[tuple[str, str | None]] = set()
-                for c_issue in cleaned_issues:
-                    issue_key = (c_issue.kind, c_issue.field)
-                    if issue_key not in original_keys and issue_key not in seen_new_keys:
-                        seen_new_keys.add(issue_key)
-                        field_display = f"'{c_issue.field}'" if c_issue.field else "dataset"
-                        newly_introduced.append(
-                            f"New issue after cleaning — {c_issue.kind} in {field_display}: {c_issue.message}"
-                        )
-
-                validation_limitations.append(
-                    "Re-detection covers duplicates, missingness, mixed-type values, statistical outliers, "
-                    "and candidate-identifier conflicts on the cleaned frame; it does not re-run semantic "
-                    "candidate generation or human confirmation state, which are unaffected by transformation actions."
-                )
-            except Exception as exc:
-                newly_introduced = []
-                validation_limitations.append(
-                    f"Re-detection for newly introduced issues skipped due to unexpected error: {exc}"
-                )
-
-        val_result = ValidationResult(
-            intended_issues_addressed=[p.issue_id for p in proposals if p.status == "approved"],
-            newly_introduced_issues=newly_introduced,
-            before_snapshot=before_snap,
-            after_snapshot=after_snap,
-            comparison={
-                "row_count_diff": after_snap.row_count - before_snap.row_count,
-            },
-            limitations=validation_limitations,
-        )
+        val_result = self._validate_effects(original, cleaned, issues, proposals)
         
         shifts = compute_distribution_shifts(original, cleaned)
         loss_notes = derive_information_loss_notes(shifts, changes)

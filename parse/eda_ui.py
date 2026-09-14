@@ -9,7 +9,7 @@ import pandas as pd
 
 from parse.core.contracts import SourceRef
 from parse.analysis import AnalysisRequest
-from parse.eda import DataUnderstanding, EDAResult
+from parse.eda import DataUnderstanding, LegacyEDAResult
 from parse.semantic_analysis import AnalysisBundle, AnalysisPipeline, RelevanceRequest
 
 
@@ -34,7 +34,7 @@ def load_uploaded_dataset(filename: str, content: bytes) -> tuple[pd.DataFrame, 
     return frame, source
 
 
-def profile_uploaded_dataset(filename: str, content: bytes) -> EDAResult:
+def profile_uploaded_dataset(filename: str, content: bytes) -> LegacyEDAResult:
     """Read an uploaded CSV/Excel payload and return a read-only EDA result."""
     frame, source = load_uploaded_dataset(filename, content)
     return DataUnderstanding(source).profile(frame)

@@ -883,16 +883,15 @@ with tab_eda:
         try:
             from parse.eda_ui import analyze_loaded_dataset, load_uploaded_dataset
 
-            from parse.eda import DataUnderstanding
             frame, source = load_uploaded_dataset(
                 eda_file.name,
                 eda_file.getvalue(),
             )
             st.session_state.eda_frame = frame
-            st.session_state.eda_result = DataUnderstanding(source).profile(frame)
             st.session_state.analysis_bundle = analyze_loaded_dataset(
                 frame, source, analysis_objective or None,
             )
+            st.session_state.eda_result = st.session_state.analysis_bundle.eda
             from parse.semantic_analysis import HumanContext
             st.session_state.analysis_context = HumanContext()
             st.session_state.cleaning_result = None

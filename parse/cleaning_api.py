@@ -47,21 +47,8 @@ def validate_cleaning(
     """Perform before/after validation of cleaning effects."""
     cleaner = DataCleaner(context.source_ref if context else None)
     
-    before_snap = cleaner._snapshot(original)
-    after_snap = cleaner._snapshot(cleaned)
+    # We need the original issues to diff against. Since this API takes original/cleaned 
+    # directly without prior state, we have to detect original issues now.
+    issues, proposals = cleaner.detect(original, context=context)
     
-    missing_before = sum(before_snap.missing_counts.values())
-    missing_after = sum(after_snap.missing_counts.values())
-    
-    return ValidationResult(
-        intended_issues_addressed=[],
-        newly_introduced_issues=[],
-        before_snapshot=before_snap,
-        after_snapshot=after_snap,
-        comparison={
-            "row_count_diff": after_snap.row_count - before_snap.row_count,
-            "duplicate_count_diff": after_snap.duplicate_rows - before_snap.duplicate_rows,
-            "total_missing_diff": missing_after - missing_before,
-        }
-    )
-
+    return cleaner._validate_effects(original, cleaned, issues, proposals)
