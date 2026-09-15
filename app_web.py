@@ -1106,28 +1106,32 @@ with tab_eda:
                 ):
                     from parse.eda_ui import analyze_loaded_dataset
 
-                    adopted_frame = cleaning_result.cleaned
-                    base_source = st.session_state.analysis_bundle.eda.request.source
-                    adopted_label = base_source.label or base_source.source_id
-                    adopted_source = SourceRef(
-                        base_source.source_id,
-                        base_source.source_type,
-                        locator=base_source.locator,
-                        label=f"{adopted_label} (cleaned, adopted)",
-                    )
-                    objective = st.session_state.get("analysis_objective") or None
-                    st.session_state.eda_frame = adopted_frame
-                    st.session_state.eda_working_dataset = "cleaned_adopted"
-                    st.session_state.analysis_bundle = analyze_loaded_dataset(
-                        adopted_frame,
-                        adopted_source,
-                        objective,
-                    )
-                    st.session_state.eda_result = st.session_state.analysis_bundle.eda
-                    st.success(
-                        "Working dataset updated to the cleaned frame. "
-                        "Detected issues and dataset analysis below reflect this version."
-                    )
+                    try:
+                        adopted_frame = cleaning_result.cleaned
+                        base_source = st.session_state.analysis_bundle.eda.request.source
+                        adopted_label = base_source.label or base_source.source_id
+                        adopted_source = SourceRef(
+                            base_source.source_id,
+                            base_source.source_type,
+                            locator=base_source.locator,
+                            label=f"{adopted_label} (cleaned, adopted)",
+                        )
+                        objective = st.session_state.get("analysis_objective") or None
+                        adopted_bundle = analyze_loaded_dataset(
+                            adopted_frame,
+                            adopted_source,
+                            objective,
+                        )
+                        st.session_state.eda_frame = adopted_frame
+                        st.session_state.eda_working_dataset = "cleaned_adopted"
+                        st.session_state.analysis_bundle = adopted_bundle
+                        st.session_state.eda_result = adopted_bundle.eda
+                        st.success(
+                            "Working dataset updated to the cleaned frame. "
+                            "Detected issues and dataset analysis below reflect this version."
+                        )
+                    except Exception as exc:
+                        st.error(f"Adopting cleaned data failed: {exc}")
 
             st.download_button(
                 "Download EDA result (JSON)",
