@@ -21,7 +21,7 @@ def test_adopted_cleaned_frame_no_longer_reports_fixed_duplicate():
     source = SourceRef("dup-test", "csv", label="dup.csv")
     bundle = AnalysisPipeline().analyze(AnalysisRequest(frame, source))
     context = create_cleaning_context(bundle, purpose="descriptive_analysis")
-    _, proposals = propose_cleaning(context, frame)
+    issues_before, proposals = propose_cleaning(context, frame)
 
     assert any(issue.issue_id == "duplicate_rows" for issue in issues_before)
     dupe_prop = next(proposal for proposal in proposals if proposal.action == "remove_duplicates")
