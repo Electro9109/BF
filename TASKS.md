@@ -1030,17 +1030,60 @@ currently silently broken.
 
 ---
 
-## Parking Lot
-*(Anything noticed while working that's out of scope for the current
-task goes here, not into the current task's diff.)*
-
--
+## Task 8 — Resolve duplicate `EDAResult` class names
+**Status: COMPLETE.** `parse/eda.py`'s `EDAResult` renamed to
+`LegacyEDAResult` (`parse/analysis.py`'s `EDAResult` kept as the live
+name); removed a redundant double-analysis pass in `app_web.py`; fixed
+dead-code `validate_cleaning()` in `parse/cleaning_api.py` to delegate
+to the shared `_validate_effects()` instead of duplicating validation
+logic. **Note:** this task's completion report claimed the UI change
+was verified working, but it was not — independent verification found
+`app_web.py` still assumed the old (`LegacyEDAResult`-shaped) object,
+which crashed the Data Explorer tab live. That regression was caught
+and fixed as Task 9, immediately following. Do not reopen Task 8
+itself — the class-rename/delegation work it describes is correct and
+verified; the UI-shape bug it introduced is tracked and closed under
+Task 9. (`545f580`)
 
 ---
 
-## Upcoming (not started — for context only, do not work on these yet)
+## Task 9 — Fix Data Explorer `EDAResult` shape regression
+**Status: COMPLETE.** Fixed the live crash introduced by Task 8:
+`app_web.py` was still built against the old `LegacyEDAResult` object
+shape after Task 8 switched the Data Explorer tab onto
+`parse.analysis.EDAResult`. Added `tests/test_app_web_data_shapes.py` 
+with a static shape-contract guard so this class of regression fails
+fast in CI instead of only at runtime. Full suite green. Do not
+reopen — file bugs as new tasks. (`9bb81e9`)
 
-*(Tasks 1-7 are now complete.)*
+---
+
+## Task 10 — Let users adopt cleaned data into the working dataset
+**Status: COMPLETE.** Fixed a state bug: applying a cleaning
+proposal never updated `st.session_state.eda_frame`, so re-running
+detection kept reporting already-fixed issues as still present. Added
+an explicit, human-gated "Use cleaned data for further analysis"
+button (adoption is never automatic, per the human-in-the-loop
+non-negotiable) which refreshes analysis on adopt; a purpose change
+now clears any stale `cleaning_result` rather than leaving it
+pointing at data that no longer matches. Regression tests added in
+`tests/test_app_web_cleaning_adoption.py`. Full suite green. Do not
+reopen — file bugs as new tasks. (`2f317cc`)
+
+---
+
+## Task 11 — Translate upload parse errors and guard cleaned-data adoption
+**Status: COMPLETE.** Corrupt/empty file uploads were leaking raw
+pandas exceptions to the user; `parse/eda_ui.py` now translates these
+into clean, user-facing messages, scoped carefully so the
+pre-existing (and correct) unsupported-extension error path is left
+untouched. Also fixed Task 10's adoption block, which was unguarded
+and unsafely ordered (mutated `st.session_state` before the operation
+that could fail): now wrapped in try/except with an
+analyze-before-mutate ordering so a failed adoption can't leave state
+inconsistent. Includes a same-day follow-up fix (`7ff726c`) for a test
+regression caused by an `issues_before` rename. Full suite green. Do
+not reopen — file bugs as new tasks. (`99035c0`, `7ff726c`)
 
 ---
 
@@ -1175,4 +1218,18 @@ three sites that were missing it. No new types, no schema change.
 ## Parking Lot
 *(Anything noticed while working that's out of scope for the current
 task goes here, not into the current task's diff.)*
+
+-
+
+---
+
+## Upcoming (not started — for context only, do not work on these yet)
+
+*(Tasks 1-11 are now complete. TASKS.md was out of sync with the repo
+for Tasks 8-11 — those commits existed and were independently verified
+at the time, but the corresponding entries were never written back
+into this file. Backfilled now, verified against `git show --stat` for
+each commit before writing.)*
+
+
 
