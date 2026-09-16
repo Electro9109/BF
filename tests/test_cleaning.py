@@ -49,6 +49,45 @@ def test_cleaner_does_not_propose_mixed_values_or_outlier_deletion():
     assert not any(proposal.action in {"convert_type", "remove_outliers"} for proposal in proposals)
 
 
+def test_duplicate_issue_and_proposal_carry_evidence():
+    frame = pd.DataFrame({"id": [1, 2, 2], "value": [10.0, 20.0, 20.0]})
+    source = SourceRef("dataset-a", "csv", "a.csv")
+    issues, proposals = DataCleaner(source).detect(frame)
+
+    dup_issue = next(issue for issue in issues if issue.kind == "duplicate_rows")
+    dup_proposal = next(p for p in proposals if p.proposal_id == "remove_duplicate_rows")
+
+    assert len(dup_issue.evidence) > 0
+    assert dup_issue.evidence[0].ref_id == "dataset-a"
+    assert len(dup_proposal.evidence) > 0
+    assert dup_proposal.evidence[0].ref_id == "dataset-a"
+
+
+def test_mixed_values_issue_carries_evidence_without_context():
+    # Heuristic-only path: no CleaningContext/attribute_profiles supplied.
+    frame = pd.DataFrame({"value": ["1", "unknown", "1000"]})
+    source = SourceRef("dataset-b", "csv", "b.csv")
+    issues, _ = DataCleaner(source).detect(frame, DataUnderstanding().profile(frame))
+
+    mixed_issue = next(issue for issue in issues if issue.kind == "mixed_values")
+    assert len(mixed_issue.evidence) > 0
+    assert mixed_issue.evidence[0].ref_id == "dataset-b"
+    assert mixed_issue.evidence[0].locator == "value"
+
+
+def test_missing_values_issue_carries_evidence_without_attribute_profile():
+    # No eda_result/context supplied, so attr_prof is None for every column;
+    # evidence must still be attached via the source_id fallback.
+    frame = pd.DataFrame({"value": [1.0, None, 3.0]})
+    source = SourceRef("dataset-c", "csv", "c.csv")
+    issues, _ = DataCleaner(source).detect(frame)
+
+    missing_issue = next(issue for issue in issues if issue.kind == "missing_values")
+    assert len(missing_issue.evidence) > 0
+    assert missing_issue.evidence[0].ref_id == "dataset-c"
+    assert missing_issue.evidence[0].locator == "value"
+
+
 def test_validation_detects_newly_introduced_outlier():
     # Construct a dataset where duplicate rows mask an outlier under IQR rule:
     # 20 duplicate rows with v=10, and single rows with v=11, 12, 13, and 100.
@@ -239,4 +278,5 @@ def test_discrepancy_4_multiple_outlier_findings_per_column():
     assert {i.issue_id for i in outlier_issues} == {"outliers_val", "unusual:val_1"}
     assert {p.proposal_id for p in outlier_proposals} == {"investigate_val_outliers", "investigate_val_outliers_1"}
 
-
+
+

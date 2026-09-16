@@ -1042,5 +1042,137 @@ task goes here, not into the current task's diff.)*
 
 *(Tasks 1-7 are now complete.)*
 
+---
 
+## Task 12 — Attach missing `EvidenceRef`s in `DataCleaner._detect()` 
+**Status: COMPLETE.** Added `evidence=(EvidenceRef(source_id, "derived_from",
+locator=...),)` to the `duplicate_rows` issue and `remove_duplicate_rows`
+proposal (`locator=None`, since the finding spans the row set, not a single
+column), the heuristic-path `mixed_values_{column}` issue, and made the
+`missing_values` issue's evidence unconditional (previously gated on
+`attr_prof` being present). No detection logic, threshold, or confidence
+score changed. Three new regression tests in `tests/test_cleaning.py`, each
+independently confirmed to fail against the pre-fix code and pass against
+the fix. Full suite green (127 passed, up from 124; only the one expected
+pre-existing environment-only failure remains). Do not reopen — file bugs as
+new tasks.
+
+### Objective
+Three issue/proposal construction sites in `DataCleaner._detect()` 
+silently rely on the `evidence: tuple[EvidenceRef, ...] = ()` default
+instead of populating it, even though every input needed to populate
+it (`source_id`, column name, computed indices) is already in scope at
+the call site. Make `evidence` non-empty everywhere it can be, with no
+change to any detection logic, action, or score.
+
+### Why — audit findings first (read before writing any code)
+PARSE_CONTRACTS.md, Decision 4, is a stated non-negotiable: *"Retrieval,
+analysis, synthesis, and evaluation results refer to source or result
+identifiers rather than copying authority into the result itself."*
+Audited `parse/analysis.py` (`_attribute_findings`, `_relationship_findings`,
+the shared `_finding()` helper), `parse/eda.py` (`_finding()`), and
+`parse/semantic_analysis.py` — all consistently attach a real
+`EvidenceRef` to every `Finding`/`EDAFinding`, and `Finding.evidence` is
+a required positional field with no default, which structurally
+prevents this class of omission. `ValidationResult`/`ChangeRecord` were
+also checked and correctly need no `EvidenceRef` — they carry their own
+inspectable before/after data directly (the Task 2/3 pattern), which is
+sufficient evidence in itself.
+
+`parse/cleaning.py::_detect()` is the one place this discipline slipped,
+in three spots:
+1. **`duplicate_rows` issue (line ~236) and `remove_duplicate_rows` 
+   proposal (line ~244)** — no `evidence=` passed at all. `source_id` 
+   is always in scope (resolved at the top of `_detect()`); the
+   `remove_duplicate_rows` proposal's real evidence (`dupe_basis`:
+   `columns_compared`, `duplicate_row_count`) is computed but only
+   surfaced inside `parameters["confidence_basis"]`, not in the
+   standard `evidence` channel the UI reads.
+2. **`mixed_values_{column}` heuristic-path issue (line ~323)** — no
+   `evidence=`, while its sibling four lines later (line ~335, sourced
+   from `attr_prof.quality_issues`) attaches `EvidenceRef(source_id,
+   "derived_from", locator=str(column))` for the same issue kind with
+   identical inputs available. No principled reason for the asymmetry.
+3. **`missing_values` issue (line ~282)** — `evidence` is only attached
+   when `attr_prof` is present (`evidence = (...) if attr_prof else
+   ()`), even though `source_id` and `column` are available
+   unconditionally, the same way the candidate-identifier issue three
+   lines above already falls back to `source_id` regardless of
+   `attr_prof`.
+
+Confirmed via `grep` that no existing test in `tests/test_cleaning*.py` 
+asserts anything about evidence for these three issue kinds — this is
+an untested blind spot, not a documented, deliberate exception.
+
+### Scope
+**In scope:**
+- Add `evidence=(EvidenceRef(source_id, "derived_from", locator=None),)` 
+  to the `duplicate_rows` `CleaningIssue` and the `remove_duplicate_rows` 
+  `TransformationProposal` (locator is `None`, not a column, since the
+  finding spans the whole row/frame, not a single attribute).
+- Add `evidence=(EvidenceRef(source_id, "derived_from",
+  locator=str(column)),)` to the heuristic-path `mixed_values_{column}`
+  issue, matching its sibling's pattern exactly.
+- Make `missing_values` issue evidence unconditional: always
+  `EvidenceRef(source_id, "derived_from", locator=str(column))`,
+  regardless of whether `attr_prof` is present.
+- Regression tests asserting `len(issue.evidence) > 0` /
+  `len(proposal.evidence) > 0` for all four sites (duplicate issue,
+  duplicate proposal, heuristic mixed-values issue, missing-values
+  issue with and without `attr_prof`/context).
+
+**Out of scope:**
+- Outlier-finding evidence (line ~375) — correctly pass-through from
+  upstream EDA `Finding.evidence`, a different mechanism, already
+  audited clean; not touched.
+- Any change to detection logic, thresholds, confidence scores, or
+  which issues/proposals get raised.
+- `ValidationResult`/`ChangeRecord` — audited, correctly don't carry
+  `EvidenceRef`.
+
+### Design
+Purely additive: same `EvidenceRef(source_id, "derived_from",
+locator=...)` construction pattern already used elsewhere in this same
+function (e.g. line ~265's candidate-identifier issue), applied to the
+three sites that were missing it. No new types, no schema change.
+
+### Files
+- `parse/cleaning.py` (the three sites above)
+- `tests/test_cleaning.py` (new regression assertions)
+
+### Non-Negotiables (DO NOT)
+- Do NOT change any detection condition, threshold, or which
+  issues/proposals get raised — this task only adds evidence to
+  results that are already raised.
+- Do NOT change any confidence score or scoring function.
+- Do NOT touch the outlier-finding evidence path (already correct,
+  out of scope).
+- Do NOT move `dupe_basis` out of `parameters["confidence_basis"]` —
+  that's a distinct signal (the *basis* for a confidence score) from
+  `evidence` (a reference to the *source data*); both should exist,
+  this task only adds the latter where it was missing.
+
+### Testing
+- New assertions in `tests/test_cleaning.py` for each of the four
+  sites, checking `evidence` is non-empty and its `ref_id` matches the
+  expected `source_id`.
+- Full suite must stay green, including the one pre-existing
+  environment-only failure (`test_existing_experiment_gaps_are_reported_and_retained`).
+
+### Acceptance Criteria
+- [ ] `duplicate_rows` issue and `remove_duplicate_rows` proposal both
+      carry a non-empty `evidence` tuple.
+- [ ] Heuristic-path `mixed_values_{column}` issue carries a non-empty
+      `evidence` tuple, matching its `attr_prof`-sourced sibling.
+- [ ] `missing_values` issue carries non-empty `evidence` 
+      unconditionally, with and without `attr_prof`.
+- [ ] No detection logic, condition, threshold, or confidence score
+      changed anywhere.
+- [ ] New regression tests pass; full existing suite still green.
+
+---
+
+## Parking Lot
+*(Anything noticed while working that's out of scope for the current
+task goes here, not into the current task's diff.)*
 

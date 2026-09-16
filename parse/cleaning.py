@@ -233,12 +233,14 @@ class DataCleaner:
         duplicate_rows = tuple(frame.index[frame.duplicated(keep="first")])
         if duplicate_rows:
             issue_id = "duplicate_rows"
+            duplicate_evidence = (EvidenceRef(source_id, "derived_from", locator=None),)
             issues.append(CleaningIssue(
                 issue_id, "duplicate_rows", "warning",
                 f"{len(duplicate_rows)} duplicate row(s) can be reviewed.",
                 row_indices=duplicate_rows, method="pandas.duplicated",
                 assumptions=("Rows are duplicates across all columns.",),
                 duplicate_kind="exact",
+                evidence=duplicate_evidence,
             ))
             dupe_conf, dupe_basis = score_duplicate_removal(frame, duplicate_rows)
             proposals.append(TransformationProposal(
@@ -247,6 +249,7 @@ class DataCleaner:
                 affected_records=duplicate_rows,
                 confidence=dupe_conf,
                 parameters={"confidence_basis": dupe_basis},
+                evidence=duplicate_evidence,
             ))
 
         # 3. Discrepancy 1: Candidate-identifier conflict detection
@@ -277,7 +280,7 @@ class DataCleaner:
                 missing_count = len(missing_rows)
                 method = "analysis_profile" if attr_prof else "isna"
                 missingness_kind = (attr_prof.missingness_kind or "MISSING") if attr_prof else None
-                evidence = (EvidenceRef(source_id, "derived_from", locator=str(column)),) if attr_prof else ()
+                evidence = (EvidenceRef(source_id, "derived_from", locator=str(column)),)
 
                 issues.append(CleaningIssue(
                     issue_id, "missing_values", "warning",
@@ -325,6 +328,7 @@ class DataCleaner:
                     f"Column '{column}' mixes numeric-like and non-numeric values.",
                     field=str(column), method="numeric_parse_fraction",
                     assumptions=("Non-numeric values may be meaningful domain values.", "No conversion is proposed without domain review."),
+                    evidence=(EvidenceRef(source_id, "derived_from", locator=str(column)),),
                 ))
                 mixed_detected = True
 
