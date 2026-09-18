@@ -13,7 +13,7 @@ import warnings
 import pandas as pd
 
 from config.paths import EXPERIMENTS_CSV
-from data.sinter_schemas import CSV_COLUMN_MAP, ExperimentRow
+from data.bf_experiment_schema import CSV_COLUMN_MAP, ExperimentRow
 
 
 class ExperimentValidationWarning(UserWarning):

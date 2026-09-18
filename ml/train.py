@@ -37,7 +37,7 @@ except ImportError:
     HAS_XGB = False
     warnings.warn("xgboost not installed — only Random Forest will be trained.")
 
-from ml.feature_processing import load_and_build, TARGET_COLS
+from departments.blast_furnace.feature_processing import load_and_build, TARGET_COLS
 
 warnings.filterwarnings("ignore")
 

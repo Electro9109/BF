@@ -1,4 +1,4 @@
-"""Sinter-specific structured experiment contracts."""
+"""Blast Furnace historical experiment dataset schema."""
 
 from dataclasses import asdict, dataclass
 from typing import Optional
@@ -6,7 +6,7 @@ from typing import Optional
 
 @dataclass
 class ExperimentRow:
-    """One row of the Sinter historical experiment dataset."""
+    """One row of the Blast Furnace historical experiment dataset."""
 
     Sinter: float
     Ore: float

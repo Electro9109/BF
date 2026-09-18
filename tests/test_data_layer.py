@@ -4,7 +4,7 @@ import pytest
 from data.experiments_loader import ExperimentValidationWarning, load_experiments_df
 from data.loader import load_and_chunk_data
 from data.schemas import Chunk
-from data.sinter_schemas import ExperimentRow
+from data.bf_experiment_schema import ExperimentRow
 
 
 def test_document_loader_returns_generic_chunks():
@@ -57,4 +57,4 @@ def test_existing_experiment_gaps_are_reported_and_retained():
 
     assert len(result) == 131
     assert result["row_index"].iloc[0] == 1
-    assert ExperimentRow.__module__ == "data.sinter_schemas"
+    assert ExperimentRow.__module__ == "data.bf_experiment_schema"

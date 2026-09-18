@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ml.predictor import Predictor
-from ml.feature_processing import CHEM_COLS, TARGET_COLS
+from departments.blast_furnace.feature_processing import CHEM_COLS, TARGET_COLS
 from config.paths import ML_MODEL_DIR
 
 

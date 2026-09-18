@@ -2,7 +2,7 @@ from config.models import EMBED_MODEL_NAME, LLM_MODEL_NAME
 from config.paths import DATA_FILE, PROJECT_ROOT
 from config.retrieval import TOP_K
 from config.retrieval_domain import TOPIC_KEYWORDS
-from config.sinter import ML_FEATURES, ML_TARGET
+from config.bf_ml import ML_FEATURES, ML_TARGET
 
 
 def test_paths_are_repository_anchored():

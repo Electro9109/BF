@@ -30,7 +30,7 @@ def nearest_neighbor_distance(query_scaled: np.ndarray) -> float:
     -------
     float  — minimum Euclidean distance; smaller == closer to training data.
     """
-    from ml.feature_processing import load_and_build
+    from departments.blast_furnace.feature_processing import load_and_build
     res = load_and_build()
     X = res["X"]   # shape (n_samples, n_features), already scaled
     dists = np.linalg.norm(X - query_scaled, axis=1)
@@ -45,11 +45,11 @@ def find_nearest_experiments(features: dict, k: int = 3) -> list:
     Each result dict contains the original experiment's feature values,
     its ML_TARGET value, its 1-based row_index, and a 'similarity' score.
 
-    NOTE: uses Sinter configuration from config.sinter and the historical
+    NOTE: uses BF configuration from config.bf_ml and the historical
     experiment loader.
     """
     from sklearn.preprocessing import StandardScaler
-    from config.sinter import ML_FEATURES, ML_TARGET
+    from config.bf_ml import ML_FEATURES, ML_TARGET
     from data.experiments_loader import load_experiments_df
 
     df = load_experiments_df()

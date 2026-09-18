@@ -14,6 +14,7 @@ from parse.core.contracts import (
     SourceRef,
     SynthesisResult,
 )
+from parse.core.department import Department
 from parse.core.operations import Analyzer, Evaluator, Processor, Retriever, Synthesizer
 from parse.core.workflow import WorkflowResult, run_workflow
 
@@ -30,6 +31,7 @@ __all__ = [
     "RetrievedEvidence",
     "SourceRef",
     "SynthesisResult",
+    "Department",
     "Analyzer",
     "Evaluator",
     "Processor",

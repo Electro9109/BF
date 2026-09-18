@@ -1,6 +1,6 @@
 """Prediction, historical comparison, retrieval, and synthesis workflow."""
 
-from config.sinter import ML_TARGET
+from config.bf_ml import ML_TARGET
 from config.paths import ML_MODEL_DIR
 from config.retrieval import TOP_K
 from ml.similarity import find_nearest_experiments

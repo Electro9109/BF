@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ml.feature_processing import (
+from departments.blast_furnace.feature_processing import (
     CHEM_COLS, TARGET_COLS,
     _parse_atmosphere, _encode_burden_numeric, _encode_test_type,
 )
@@ -171,7 +171,7 @@ class Predictor:
                     "N2_pct": parsed_condition.get("N2_pct", 0.0)
                 }])
             else:
-                from ml.feature_processing import _parse_atmosphere
+                from departments.blast_furnace.feature_processing import _parse_atmosphere
                 atm_df = _parse_atmosphere(pd.Series([test_condition or ""]))
             atm_scaled = self._scalers["atmosphere"].transform(atm_df)
             parts.append(atm_scaled)
@@ -187,7 +187,7 @@ class Predictor:
                     "num_components": parsed_condition.get("num_components", 0)
                 }])
             else:
-                from ml.feature_processing import _encode_burden_numeric
+                from departments.blast_furnace.feature_processing import _encode_burden_numeric
                 burden_df = _encode_burden_numeric(pd.Series([burden or ""]))
             burden_scaled = self._scalers["burden"].transform(burden_df)
             parts.append(burden_scaled)
@@ -200,7 +200,7 @@ class Predictor:
                 n2_val = parsed_condition.get("N2_pct", 0.0)
                 sinter_val = parsed_condition.get("sinter_pct", 0.0)
             else:
-                from ml.feature_processing import _parse_atmosphere, _encode_burden_numeric
+                from departments.blast_furnace.feature_processing import _parse_atmosphere, _encode_burden_numeric
                 atm_unscaled = _parse_atmosphere(pd.Series([test_condition or ""]))
                 co_val = float(atm_unscaled["CO_pct"].iloc[0])
                 h2_val = float(atm_unscaled["H2_pct"].iloc[0])

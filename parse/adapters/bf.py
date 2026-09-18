@@ -97,7 +97,7 @@ def prediction_to_analysis(
     }
     applicability = Applicability(
         indicators=indicators,
-        limitations=["Model performance is limited by the available Sinter dataset."],
+        limitations=["Model performance is limited by the available BF dataset."],
     )
     return AnalysisResult(
         result_id=result_id,

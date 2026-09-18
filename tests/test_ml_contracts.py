@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from ml.condition_parser import parse_condition_nl
-from ml.feature_processing import (
+from departments.blast_furnace.feature_processing import (
     CHEM_COLS,
     TARGET_COLS,
     build_features,
