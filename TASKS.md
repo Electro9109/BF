@@ -1215,6 +1215,208 @@ three sites that were missing it. No new types, no schema change.
 
 ---
 
+## Task 13 — Repo hygiene: fix misleading "sinter" naming, no functional change
+
+### Objective
+Rename/relabel the modules and docstrings that use "sinter" to mean "the
+core BF historical experiment dataset" — a naming collision with the actual
+Sinter Plant department that will confuse everyone once department work
+starts. Pure rename/relabel; zero behavior change.
+
+### Why — audit findings
+Read `data/sinter_schemas.py`, `config/sinter.py`, `docs/sinter.txt`,
+`data/experiments_loader.py`, and `parse/adapters/bf.py` end-to-end.
+Confirmed: **there is no existing Sinter Plant department code, data, or
+literature anywhere in this repo.** Everything named "sinter" is actually
+about *sinter-as-a-burden-ingredient inside the BF process* — a different
+thing:
+- `data/sinter_schemas.py`'s `ExperimentRow`/`CSV_COLUMN_MAP` is the schema
+  for the **core BF historical experiment CSV** (Sinter/Ore/Pellet blend
+  *percentages* feeding Ts/Tm targets), loaded by
+  `data/experiments_loader.py` and consumed by `ml/similarity.py` for BF
+  nearest-experiment lookup. Its own docstring even says "Sinter-specific
+  structured experiment contracts" while describing the general BF
+  experiment shape.
+- `config/sinter.py`'s docstring literally reads *"Sinter-domain
+  configuration used by the current BF prototype"* and its two constants
+  (`ML_FEATURES`, `ML_TARGET`) are just BF's chemistry feature list and
+  target column — not sinter-plant config.
+- `docs/sinter.txt` is titled "Sinter as Blast Furnace Burden Material" —
+  literature about sinter's effect on BF cohesive-zone behavior, not about
+  the sinter-making process.
+- `parse/adapters/bf.py` line ~100 has a limitation string referencing "the
+  available Sinter dataset," same conflation.
+- Confirmed via `grep -rn` that `docs/*.txt` (all 11 files) is entirely BF
+  process-fundamentals literature (FeO, basicity, cohesive zone, gas
+  atmosphere, permeability, reducibility, slag formation, etc.) — there is
+  no general or per-department corpus to point other departments at later;
+  each department will need its own literature sourced when its turn comes.
+
+This matters now, before any `Department` contract design starts, because
+building `departments/sinter/` against these files later would be a real
+bug (wiring the wrong department's schema/literature into the wrong slot),
+not just cosmetic. Cheaper to fix the naming while nothing depends on it
+being "sinter" yet.
+
+### Scope
+**In scope:**
+- Rename `data/sinter_schemas.py` → `data/bf_experiment_schema.py` 
+  (`ExperimentRow`, `CSV_COLUMN_MAP` unchanged).
+- Rename `config/sinter.py` → `config/bf_ml.py`, fix its docstring to
+  accurately describe it as BF ML feature/target config.
+- Fix docstrings in `data/experiments_loader.py` and
+  `parse/adapters/bf.py` (the "Sinter dataset" reference) to say "BF" where
+  they mean BF.
+- Update all import sites found via `grep -rln "sinter_schemas\|config.sinter\|from config import sinter"` 
+  (confirmed: `pipeline/hybrid_pipeline.py`, `tests/test_config.py`,
+  `tests/test_data_layer.py`, `data/experiments_loader.py`,
+  `ml/similarity.py`).
+- Add a one-line header comment to each `docs/*.txt` file's directory
+  (a small `docs/README.md`) stating this corpus is BF-only, so nobody
+  assumes it's general metallurgy literature usable for other departments.
+- Do NOT rename `docs/sinter.txt` itself — that one legitimately is about
+  sinter (the burden material), which is correct BF terminology; only the
+  *code* naming was the ambiguity.
+
+**Out of scope:**
+- No new `departments/` directory yet (Task 15).
+- No `Department` contract design yet (Task 14).
+- No change to any logic, schema field names, CSV column mapping values, or
+  test assertions beyond updated import paths.
+
+### Design
+Mechanical rename via `git mv` + import-path find/replace. No new
+abstractions introduced in this task.
+
+### Files
+- `data/sinter_schemas.py` → `data/bf_experiment_schema.py` 
+- `config/sinter.py` → `config/bf_ml.py` 
+- `data/experiments_loader.py`, `parse/adapters/bf.py` (docstring/comment
+  fixes only)
+- `pipeline/hybrid_pipeline.py`, `tests/test_config.py`,
+  `tests/test_data_layer.py`, `ml/similarity.py` (import path updates)
+- New `docs/README.md` 
+
+### Non-Negotiables (DO NOT)
+- Do NOT change `ExperimentRow`'s fields, `CSV_COLUMN_MAP`'s keys/values,
+  or `config/bf_ml.py`'s constant values — content is correct, only names
+  and docstrings are wrong.
+- Do NOT touch `docs/sinter.txt`'s filename or content.
+- Do NOT start the `Department` contract or any `departments/` directory in
+  this task — that's Task 14/15.
+
+### Testing
+- Full suite must stay green, byte-for-byte same pass count as current
+  baseline (127 passed / 1 skipped / 1 expected pre-existing failure) —
+  this task changes zero behavior, so the count must not move.
+- `grep -rn "sinter_schemas\|config\.sinter\b\|config/sinter"` across the
+  repo (excluding `docs/sinter.txt` and this task's own TASKS.md entry)
+  must return nothing after the change.
+
+### Acceptance Criteria
+- [ ] No source file imports `data.sinter_schemas` or `config.sinter` 
+  anymore; both are gone, replaced by the renamed modules.
+- [ ] `config/bf_ml.py`'s docstring accurately describes it as BF config.
+- [ ] `docs/README.md` exists and states the corpus is BF-only.
+- [ ] Full suite still 127 passed / 1 skipped / 1 expected failure.
+
+---
+
+## Task 14 — Design the `Department` / `FeatureSchema` contract (architecture only, no data filling)
+
+*(Roadmap-level spec; will get a fresh audit pass and finalized spec when
+this task is actually started, same as every prior task.)*
+
+### Objective
+Define a minimal, Protocol-based contract (following the existing style of
+`parse/core/operations.py`'s `Processor`/`Analyzer`/etc. Protocols) that
+separates "what varies by department" from "what's generic" — informed by
+extracting the genuinely-variable pieces already proven to exist in
+`ml/feature_processing.py` (post-Task-13 rename), not a speculative
+universal taxonomy. No department other than BF gets implemented against it
+in this task — that's Task 15. Per your direction, this task is pure
+architecture: no dataset sourcing, no literature gathering, no second
+department implementation.
+
+### Why (preliminary — to be re-confirmed with fresh audit when started)
+`ml/feature_processing.py` mixes exactly four kinds of department-specific
+knowledge with generic pipeline logic: (1) column/loader schema, (2)
+practical value ranges used for scaling, (3) string-format parsers specific
+to how this plant records data, (4) target variable definitions. Everything
+else in the stack (`parse/eda.py`, `parse/cleaning.py`, `parse/analysis.py`)
+was already confirmed department-agnostic across three separate audits
+(Tasks 6, 7, 12). So the contract's job is narrowly to formalize those four
+things as an interface, not to redesign anything already working.
+
+### Scope
+**In scope:**
+- A `Department` Protocol (or ABC — decide based on whether default method
+  bodies are needed, matching the codebase's existing `Protocol` usage
+  where there's no shared default logic) exposing at minimum: a loader,
+  a feature/column schema, value ranges, and target definitions.
+- Doc comment on the contract explicitly marking it **provisional/v1**,
+  expected to be revised once a second department is actually implemented
+  (Task 15 only implements BF against it — the contract isn't
+  "confirmed general" until something else uses it too).
+
+**Out of scope (explicitly, per current direction):**
+- Sourcing literature or data for Sinter Plant, Coke Ovens, SMS, or Mills.
+- Implementing any department other than BF against the contract.
+- Any change to `ml/feature_processing.py`'s actual logic (Task 15).
+
+### Non-Negotiables (DO NOT)
+- Do NOT block this task on having a second department's real data —
+  that's been explicitly deprioritized. Design conservatively and mark the
+  contract provisional instead.
+- Do NOT invent department-specific fields (e.g. sinter tumbler index) into
+  the contract speculatively — the contract should only contain what BF's
+  real code already proves is needed.
+
+---
+
+## Task 15 — Extract BF into `departments/blast_furnace/` implementing the `Department` contract
+
+*(Roadmap-level spec; will get a fresh audit pass and finalized spec when
+this task is actually started.)*
+
+### Objective
+Mechanical refactor: move `ml/feature_processing.py`'s BF-specific pieces
+(post-Task-13 naming, post-Task-14 contract) into
+`departments/blast_furnace/` as the first concrete `Department` 
+implementation. No logic changes, no behavior changes — same discipline as
+Task 6's `_detect()` collapse and Task 8's rename work.
+
+### Why
+This is the actual "make the architecture real" step — a contract nobody
+implements isn't validated. Confirmed via `grep -rln` that
+`ml/feature_processing.py` has five known callers to update:
+`pipeline/prediction_pipeline.py`, `ml/predictor.py`, `ml/similarity.py`,
+`ml/train.py`, `tests/test_ml_contracts.py`. Bounded, known blast radius.
+
+### Scope
+**In scope:**
+- New `departments/blast_furnace/` package implementing Task 14's contract,
+  containing what's currently in `ml/feature_processing.py`.
+- Update the five known callers to go through the `Department` interface
+  instead of importing `ml.feature_processing` directly.
+- `departments/__init__.py` with whatever minimal registry makes sense
+  (e.g. a dict of available departments) — kept minimal, not overbuilt for
+  departments that don't exist yet.
+
+**Out of scope:**
+- Any other department.
+- Any behavior/logic change — every existing test for BF prediction must
+  pass unmodified in outcome (paths may change, results must not).
+
+### Non-Negotiables (DO NOT)
+- Do NOT change any BF chemistry range, parser regex, or target definition
+  — this is a move, not a rewrite.
+- Do NOT let this task expand into building Sinter/Coke/SMS/Mills — one
+  department implemented is the goal, proving the contract works for the
+  one real case we have.
+
+---
+
 ## Parking Lot
 *(Anything noticed while working that's out of scope for the current
 task goes here, not into the current task's diff.)*
@@ -1225,11 +1427,7 @@ task goes here, not into the current task's diff.)*
 
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(Tasks 1-11 are now complete. TASKS.md was out of sync with the repo
-for Tasks 8-11 — those commits existed and were independently verified
-at the time, but the corresponding entries were never written back
-into this file. Backfilled now, verified against `git show --stat` for
-each commit before writing.)*
+*(Tasks 1-12 are now complete. Tasks 13-15 are planned for upcoming work.)*
 
 
 
