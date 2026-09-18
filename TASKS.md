@@ -1548,49 +1548,235 @@ new tasks.
 
 ## Task 18 — Repo folder hierarchy cleanup + UI revamp (simple, distinct visual identity)
 
-*(Noted now per user direction, not started — full audit-first spec will
-be written when this is actually picked up, same discipline as every prior
-task. Recorded here only so it isn't lost.)*
+### Objective
+Two related, separately-scoped pieces: (A) consolidate the remaining
+scattered BF-specific modules into `departments/blast_furnace/`, following
+the pattern Task 15 already established, and fix one more naming-precision
+issue found along the way; (B) replace the current animated, dark-only,
+low-contrast UI with a static, high-contrast palette that holds up both
+on-screen and projected.
 
-### UI direction (confirmed by user, binds the eventual spec)
-- **No animations.** Static, simple interactions only.
-- **Color palette must be legible in two very different viewing
-  conditions: on-screen and projected.** This is a real constraint, not a
-  taste preference — projectors wash out low-contrast and pale/pastel
-  colors, and can shift color temperature; a palette that looks fine on a
-  laptop screen can become unreadable projected in a lit room. When this
-  task is picked up: favor strong contrast ratios (WCAG AA minimum, ideally
-  AAA for primary text), avoid relying on subtle color differences to
-  convey meaning (pair color with text/icons), avoid very light/washed
-  pastels and very dark low-contrast combinations, and test the palette
-  against a simulated projector condition (reduced contrast + brightness),
-  not just designer screens.
-- "Simple" — no unnecessary visual complexity; this pairs with the
-  project's existing "make it reliable before making it presentable"
-  principle already in the summary.
+### Why — audit findings
 
-### Rough objective
-Two related but separable pieces:
-1. **Folder hierarchy**: the repo currently mixes top-level `ml/`, `data/`,
-   `parse/`, `pipeline/`, `retrieval/`, `llm/`, `config/`, and now
-   `departments/` with no clear top-level story for where department-owned
-   code lives vs. generic PARSE Core vs. glue/pipeline code. Needs a real
-   audit of every top-level directory's actual contents and dependencies
-   (not just a guess) before proposing a new layout — same as how Task 13's
-   naming fix came from actually reading the files, not assuming.
-2. **UI revamp**: `app_web.py` is currently one 52K single file. "Simple
-   but unique" visual identity — needs a look at what's actually there now
-   (screenshots or a read-through of the Streamlit structure) before
-   proposing changes, and a decision on whether it stays a single file or
-   gets split up as part of the same pass.
+**Part A — folder hierarchy.** Read every top-level directory
+(`config/`, `data/`, `departments/`, `llm/`, `ml/`, `parse/`, `pipeline/`,
+`retrieval/`, plus `app_web.py`/`main.py`/`setup_check.py`) and mapped real
+import dependencies. Finding: Task 15 only partially extracted BF-specific
+code. `departments/blast_furnace/feature_processing.py` and `department.py`
+moved, but `config/bf_ml.py`, `data/bf_experiment_schema.py`, and
+`data/experiments_loader.py` — all genuinely BF-specific (confirmed in
+Task 13's audit) — are still sitting in generic-sounding top-level
+`config/`/`data/` directories. That's an inconsistency worth resolving now
+that the pattern (and the corrected naming) is proven.
 
-### Explicit non-negotiable carried forward
-Per the project's design philosophy, UI work stays last for a reason —
-"make it reliable before making it presentable." This task should not
-jump the queue ahead of finishing the architecture work (Tasks 14-16) or
-introduce cosmetic changes that make future diffs noisier. When started,
-scope it narrowly and keep functional behavior unchanged unless explicitly
-part of the revamp.
+`ml/predictor.py`, `ml/similarity.py`, `ml/train.py` are a different case —
+they contain model training/scaling/inference *machinery* that consumes
+department config rather than *being* department config themselves (this
+mirrors the same distinction already drawn for `parse/eda.py`/`cleaning.py`
+being department-agnostic while `feature_processing.py` wasn't). They stay
+in `ml/` — moving them into `departments/blast_furnace/` would suggest
+they're BF-specific machinery, when the real issue is they're currently
+BF-*hardcoded* generic machinery, a different, larger problem than a folder
+move can fix (would require the Department contract to grow further, e.g.
+the missing `_encode_test_type` exposure noted in Task 17 — explicitly out
+of scope here).
+
+Also found: `setup_check.py`'s docstring reads *"Validate the current BF
+runtime layout"* — same naming-precision issue Task 13 fixed elsewhere,
+just missed there since it predates the Department work.
+
+**Part B — UI.** Read `app_web.py`'s full CSS block (lines 58-252) and tab
+structure (RAG Chat / Predictor / Data Explorer, `st.tabs`, sidebar,
+session state). Two direct conflicts with your stated direction:
+- Animations exist today: `transition: all 0.3s ease` on every tab,
+  `transition: transform 0.2s ease, box-shadow 0.2s ease` plus a hover-lift
+  (`transform: translateY(-2px)`) on prediction cards. These need removing,
+  not just leaving alone.
+- Current theme is dark-on-near-black (`#0f1117` background, `#e0e0e0`
+  text) with translucent rgba badges (e.g.
+  `background: rgba(16,185,129,0.12)`). This is a real projector risk:
+  low-lumen projectors in a lit room wash out dark backgrounds far more
+  than light ones, and translucent/low-opacity fills lose almost all
+  contrast once washed out — exactly the failure mode you flagged.
+
+### Scope
+
+**In scope — Part A (folder hierarchy):**
+- Move `config/bf_ml.py` → `departments/blast_furnace/config.py` (or
+  merge its constants directly into `departments/blast_furnace/`'s
+  existing modules — decide while implementing, whichever avoids a
+  needless extra file).
+- Move `data/bf_experiment_schema.py` and `data/experiments_loader.py` →
+  `departments/blast_furnace/` (mechanical move, update the known callers
+  — same grep-first discipline as Task 13: re-run
+  `grep -rln "bf_experiment_schema\|experiments_loader"` and update every
+  hit).
+- Fix `setup_check.py`'s docstring.
+- Add a short "Repo Layout" section to `PARSE_ARCHITECTURE.md` or
+  `README.md` (decide while implementing) documenting the resulting rule:
+  `departments/<name>/` = domain-specific schema, config, parsers, ranges;
+  `parse/`, `pipeline/`, `ml/`, `retrieval/`, `llm/` = generic machinery
+  that consumes department config (even where, like `ml/`, it's currently
+  only proven against one department).
+- Keep `data/loader.py`, `data/parser.py`, `data/schemas.py` where they
+  are — confirmed live, RAG-side, genuinely generic (not BF-specific),
+  no change needed.
+
+**In scope — Part B (UI):**
+- Remove every `transition`/`transform`-on-hover rule from the CSS block —
+  no animations, full stop.
+- Design and apply a new, static, high-contrast palette meeting WCAG AA at
+  minimum for all text/background pairs (verify with a contrast checker,
+  not by eye), avoiding translucent/low-opacity fills for anything that
+  carries meaning (status badges, confidence indicators) — solid colors
+  or solid-with-border instead.
+- Preserve the existing color-coded *meaning* (good/warn/high/medium/low
+  states) but re-derive the actual hex values for contrast compliance;
+  don't invent new semantics.
+- No structural changes to tabs, sidebar, or session-state logic — this is
+  a visual pass, not a UX/behavior redesign.
+
+**Out of scope:**
+- Any change to `ml/predictor.py`/`similarity.py`/`train.py`'s location or
+  logic.
+- Splitting `app_web.py` into multiple files — worth considering separately
+  later, not bundled into this visual pass.
+- Task 19 (test-suite health) — separate task, see below.
+
+### Non-Negotiables (DO NOT)
+- Do NOT move `ml/predictor.py`, `ml/similarity.py`, or `ml/train.py` into
+  `departments/blast_furnace/` — they're generic machinery, not domain
+  config, per the distinction above.
+- Do NOT change any prediction/training/cleaning logic in this task —
+  Part A is a mechanical move (same discipline as Task 13/15), Part B is
+  CSS/visual only.
+- Do NOT reintroduce any `transition`/`transform`/hover-animation rule.
+- Do NOT ship a palette without checking actual contrast ratios — "looks
+  fine to me" isn't the bar here, WCAG AA numbers are.
+
+### Testing
+- Full suite must stay green after Part A's moves (import-path updates
+  only, zero behavior change — same bar as Task 13).
+- Part B has no automated test (it's CSS) — verify manually against both
+  a normal screen and a simulated low-contrast/washed-out condition
+  (e.g. reduce monitor brightness/contrast, or a screenshot desaturated
+  and dimmed) before calling it done.
+
+### Acceptance Criteria
+- [ ] `config/bf_ml.py`, `data/bf_experiment_schema.py`,
+      `data/experiments_loader.py` all live under
+      `departments/blast_furnace/`; no orphaned imports.
+- [ ] `setup_check.py` docstring no longer says "BF" where it means
+      something else (or accurately reflects that it's currently BF-only,
+      whichever is true — decide while implementing, matching Task 13's
+      precision standard).
+- [ ] Repo layout rule documented.
+- [ ] Zero `transition`/`transform`-on-hover CSS remains in `app_web.py`.
+- [ ] Every text/background color pair in the new palette meets WCAG AA.
+- [ ] Full suite still green, same pass count as before Part A (Part B has
+      no test-count impact).
+
+---
+
+## Task 19 — Test-suite health: coverage gaps, permanent-failure hygiene, pytest config
+
+*(Written now per user direction — "task 19 iff task 18 is completely
+defined." Sequenced to run before Task 18 is implemented, not after —
+cleaner to have solid test infrastructure in place before a UI revamp
+touches a lot of files.)*
+
+### Objective
+Three independent fixes, all grounded in an actual audit (not a general
+"more tests are good" instinct): close the two highest-risk zero-coverage
+gaps, stop the permanent pre-existing failure from training people to
+ignore red test output, and add an explicit `pytest.ini`/`pyproject.toml`
+so warning/marker behavior isn't running on unstated defaults.
+
+### Why — audit findings
+Checked every source module against the test suite by `grep`, not
+assumption. Found these touch live behavior with zero direct tests:
+`ml/similarity.py` (`find_nearest_experiments` — feeds every live
+prediction's "similar experiments" output), `parse/cleaning_context.py`
+(`CleaningContext` — the exact contract behind Task 12's evidence fix and
+Tasks 9/10's state bugs). Lower-priority, RAG-side gaps also found but not
+in scope here: `retrieval/embeddings.py`, `llm/generator.py`,
+`llm/loader.py`, `pipeline/hybrid_pipeline.py`.
+
+Confirmed no `pytest.ini`/`pyproject.toml`/`setup.cfg` exists anywhere in
+the repo — warning filters and test discovery run on pytest's unstated
+defaults. Proved this is a real fragility, not theoretical: running with
+`-W default` instead of pytest's own filter caused a currently-passing
+test (`pytest.warns(ExperimentValidationWarning, ...)`) to fail with "DID
+NOT WARN" — its correctness is silently contingent on pytest's own
+warning-dedup behavior, not on anything the project explicitly decided.
+
+`tests/test_data_layer.py::test_existing_experiment_gaps_are_reported_and_retained`
+has shown `FAILED` in the default test run for the entire project history
+(Tasks 1-17) because it depends on a gitignored file
+(`ignore/SMRF.csv`) absent from this sandbox. A test that's supposed to
+fail forever training everyone to glance past red output is a real
+process risk, not a nitpick — that's exactly the kind of noise a genuine
+regression can hide inside.
+
+### Scope
+**In scope:**
+- Add `tests/test_similarity.py`: direct tests for
+  `nearest_neighbor_distance()` and `find_nearest_experiments()` using
+  synthetic feature arrays (no real data file needed, same pattern as
+  Task 17/18's fake-department tests).
+- Add `tests/test_cleaning_context.py`: direct tests constructing a
+  `CleaningContext` and confirming it's actually consumed correctly by
+  `DataCleaner._detect()` (ties to, but doesn't duplicate, Task 12's
+  evidence-attachment tests).
+- Fix `test_existing_experiment_gaps_are_reported_and_retained`: mark it
+  `@pytest.mark.skip(reason="requires ignore/SMRF.csv, not present in
+  this environment")` if no fixture substitute is feasible, or replace
+  the dependency with a small synthetic/committed fixture file so it can
+  actually run — decide while implementing based on what the test
+  actually needs from that file.
+- Add `pyproject.toml`'s `[tool.pytest.ini_options]` (or `pytest.ini`,
+  whichever is more consistent with how the project is run — decide while
+  implementing) with explicit `filterwarnings` covering the three warning
+  types currently seen (`RuntimeWarning: invalid value encountered in
+  divide`, `ConstantInputWarning`, the xgboost-not-installed
+  `UserWarning`), so warning behavior is a stated decision, not an
+  accident of pytest defaults.
+
+**Out of scope:**
+- `retrieval/embeddings.py`, `llm/generator.py`, `llm/loader.py`,
+  `pipeline/hybrid_pipeline.py` coverage — real gaps, lower priority
+  (RAG-side, not touching live prediction/cleaning behavior the way the
+  two in-scope modules do), noted here for a future task rather than
+  bundled in.
+- Any change to `ml/similarity.py` or `parse/cleaning_context.py`'s actual
+  logic — tests only.
+
+### Non-Negotiables (DO NOT)
+- Do NOT silently suppress the three known warnings without deciding
+  whether each is actually expected/benign first — `filterwarnings`
+  should encode a decision, not just make output quiet.
+- Do NOT delete or weaken
+  `test_existing_experiment_gaps_are_reported_and_retained`'s actual assertions to make
+  it pass — either genuinely skip it with a clear reason, or give it real
+  data to run against.
+
+### Testing
+- New tests for `ml/similarity.py`/`parse/cleaning_context.py` confirmed
+  meaningful (would fail if the underlying logic were broken — sanity
+  check by temporarily breaking the logic and confirming the new test
+  catches it, same discipline as every prior task's regression tests).
+- After the fix, `pytest -q`'s default output should show either 0 known
+  failures (if fixture-based fix chosen) or the skip counted separately
+  from failures, so a red `FAILED` line, if it ever appears again, means
+  something real broke.
+
+### Acceptance Criteria
+- [ ] `ml/similarity.py` and `parse/cleaning_context.py` have direct tests.
+- [ ] `test_existing_experiment_gaps_are_reported_and_retained` no longer
+      shows as `FAILED` in default `pytest -q` output.
+- [ ] `pyproject.toml`/`pytest.ini` exists with explicit `filterwarnings`.
+- [ ] Full suite green with an explicit, understood pass/skip count (no
+      more "expect this one failure" asterisk).
 
 ---
 
@@ -1598,14 +1784,18 @@ part of the revamp.
 *(Anything noticed while working that's out of scope for the current
 task goes here, not into the current task's diff.)*
 
--
+- `retrieval/embeddings.py`, `llm/generator.py`, `llm/loader.py`,
+  `pipeline/hybrid_pipeline.py` — zero direct test coverage, RAG-side,
+  lower priority than Task 19's in-scope gaps. Candidate for a future
+  task once RAG-side work is otherwise being touched.
 
 ---
 
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(Tasks 1-17 are now complete. Task 18 (folder hierarchy + UI) is noted
-for later, per user direction.)*
+*(Tasks 1-17 are now complete. Task 18 (folder hierarchy + UI) and Task 19
+(test-suite health) are fully specced, not started. Task 19 is intended to
+run before Task 18's implementation.)*
 
 
 
