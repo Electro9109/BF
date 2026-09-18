@@ -38,6 +38,7 @@ except ImportError:
     warnings.warn("xgboost not installed — only Random Forest will be trained.")
 
 from departments.blast_furnace.feature_processing import load_and_build, TARGET_COLS
+from departments.blast_furnace.department import BlastFurnaceDepartment
 
 warnings.filterwarnings("ignore")
 
@@ -234,6 +235,7 @@ def main():
         use_atmosphere=not args.no_atmosphere,
         use_burden=not args.no_burden,
         use_test_type=not args.no_type,
+        department=BlastFurnaceDepartment(),
     )
     X         = result["X"]
     y_dict    = result["y"]

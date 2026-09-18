@@ -7,6 +7,7 @@ from departments.blast_furnace.feature_processing import (
     CHEM_COLS,
     TARGET_COLS,
     build_features,
+    load_and_build,
     RangeScaler,
     CHEM_RANGES,
 )
@@ -84,3 +85,45 @@ def test_prediction_pipeline_preserves_feature_and_similarity_results():
 
     assert result.feature_vector == [0.1, 0.2]
     assert result.similar_experiments[0]["row_index"] == 1
+
+
+def test_load_and_build_uses_department_load_data_when_supplied():
+    """Task 18: load_and_build(department=...) must call department.load_data(path)
+    instead of load_raw(path), and must not otherwise change build_features's output.
+    """
+    frame = pd.DataFrame([{
+        **chemistry_values(),
+        "Ts": 1300,
+        "Tm": 1500,
+        "Tm-Ts": 200,
+    }])
+
+    class FakeDepartment:
+        def __init__(self):
+            self.calls = []
+
+        def load_data(self, path):
+            self.calls.append(path)
+            return frame
+
+    fake_department = FakeDepartment()
+    result = load_and_build(
+        path="unused-path-should-be-passed-through",
+        use_atmosphere=False,
+        use_burden=False,
+        use_test_type=False,
+        department=fake_department,
+    )
+
+    assert fake_department.calls == ["unused-path-should-be-passed-through"]
+    direct = build_features(frame, use_atmosphere=False, use_burden=False, use_test_type=False)
+    np.testing.assert_allclose(result["X"], direct["X"])
+
+
+def test_load_and_build_without_department_does_not_require_one():
+    # department defaults to None; this must not raise for the signature itself
+    # (actual load_raw() execution needs the real data file, tested separately
+    # / covered by the pre-existing environment-dependent test).
+    import inspect
+    signature = inspect.signature(load_and_build)
+    assert signature.parameters["department"].default is None

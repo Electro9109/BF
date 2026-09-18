@@ -1487,7 +1487,7 @@ delegation under its existing names: `CHEM_COLS`, `TARGET_COLS`,
   `pipeline/*`, `app_web.py`) — that's a separate task once we actually
   want something consuming it through the contract instead of directly.
 - Any other department.
-- Task 17 (folder hierarchy + UI) — noted below, not started.
+- Task 18 (folder hierarchy + UI) — noted below, not started.
 
 ### Non-Negotiables (DO NOT)
 - Do NOT leave any hand-copied literal in `department.py` that also exists
@@ -1510,11 +1510,64 @@ delegation under its existing names: `CHEM_COLS`, `TARGET_COLS`,
 
 ---
 
-## Task 17 — Repo folder hierarchy cleanup + UI revamp (simple, distinct visual identity)
+## Task 17 — Wire `BlastFurnaceDepartment` into `ml/train.py` (first load-bearing use)
 
-*(Noted now per your direction, not started — full audit-first spec will
+**Status: COMPLETE.** Decision: wired into `ml/train.py`, not `ml/predictor.py`.
+Reasoning: `predictor.py` doesn't use the shared `build_features()` at all —
+it has its own `_build_row()` for live single-row inference, and needs
+`_encode_test_type`, which the `Department` contract doesn't expose yet (a
+real gap, out of scope here). Wiring it now would mean rushing a contract
+extension or touching the highest-stakes, most complex, user-facing code
+path in the repo for marginal benefit. `train.py` is offline, fails loudly
+if wrong instead of silently in production, and calls the simple
+`load_and_build()` convenience function — the right first target.
+
+`load_and_build()` gained an optional `department: Department | None = None`
+parameter (`TYPE_CHECKING`-only import, no runtime circularity): when
+`None` (the default), behavior is byte-identical to before — fully
+backward compatible for every existing caller. When supplied, it calls
+`department.load_data(path)` instead of `load_raw(path)` directly.
+`ml/train.py` now explicitly constructs and passes `BlastFurnaceDepartment()`,
+making it the first genuinely load-bearing (if still offline-only) use of
+the `Department` contract in the codebase. `ml/predictor.py` is untouched —
+zero risk to live prediction behavior.
+
+New tests in `tests/test_ml_contracts.py`: confirm `load_and_build`'s
+`department` param defaults to `None`, and — via a `FakeDepartment` test
+double — that when a department is supplied, `load_and_build` calls its
+`load_data(path)` (asserted on the exact path argument) and that the
+resulting feature matrix is identical to calling `build_features()`
+directly on the same frame (real data file isn't available in this
+sandbox, same class of gap as the pre-existing `SMRF.csv` test — tested via
+a fake department returning a synthetic frame instead of file I/O).
+
+Full suite green (134 passed, up from 132). Do not reopen — file bugs as
+new tasks.
+
+---
+
+## Task 18 — Repo folder hierarchy cleanup + UI revamp (simple, distinct visual identity)
+
+*(Noted now per user direction, not started — full audit-first spec will
 be written when this is actually picked up, same discipline as every prior
 task. Recorded here only so it isn't lost.)*
+
+### UI direction (confirmed by user, binds the eventual spec)
+- **No animations.** Static, simple interactions only.
+- **Color palette must be legible in two very different viewing
+  conditions: on-screen and projected.** This is a real constraint, not a
+  taste preference — projectors wash out low-contrast and pale/pastel
+  colors, and can shift color temperature; a palette that looks fine on a
+  laptop screen can become unreadable projected in a lit room. When this
+  task is picked up: favor strong contrast ratios (WCAG AA minimum, ideally
+  AAA for primary text), avoid relying on subtle color differences to
+  convey meaning (pair color with text/icons), avoid very light/washed
+  pastels and very dark low-contrast combinations, and test the palette
+  against a simulated projector condition (reduced contrast + brightness),
+  not just designer screens.
+- "Simple" — no unnecessary visual complexity; this pairs with the
+  project's existing "make it reliable before making it presentable"
+  principle already in the summary.
 
 ### Rough objective
 Two related but separable pieces:
@@ -1551,8 +1604,8 @@ task goes here, not into the current task's diff.)*
 
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(Tasks 1-12 are now complete. Tasks 13-16 are complete/in-progress. Task
-17 is noted for later, per user direction.)*
+*(Tasks 1-17 are now complete. Task 18 (folder hierarchy + UI) is noted
+for later, per user direction.)*
 
 
 

@@ -18,12 +18,19 @@ Targets
   Ts, Tm, Tm-Ts  (all three; caller selects which to use)
 """
 
+from __future__ import annotations
+
 import re
+from typing import TYPE_CHECKING
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 
 from config.paths import DATA_FILE
+
+if TYPE_CHECKING:
+    from parse.core.department import Department
 
 
 # ── Column name constants ──────────────────────────────────────────────────
@@ -312,8 +319,17 @@ def load_and_build(
     use_atmosphere: bool = True,
     use_burden: bool = True,
     use_test_type: bool = True,
+    department: "Department | None" = None,
 ) -> dict:
-    df = load_raw(path)
+    """Load raw data and build the feature matrix.
+
+    department : optional Department implementation (e.g.
+        BlastFurnaceDepartment()) whose load_data() is used instead of
+        calling load_raw() directly. Defaults to None, which preserves the
+        original direct load_raw() behavior exactly -- passing a department
+        is purely additive and does not change what's loaded.
+    """
+    df = department.load_data(path) if department is not None else load_raw(path)
     return build_features(
         df,
         use_atmosphere=use_atmosphere,
