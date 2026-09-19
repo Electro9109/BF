@@ -1847,9 +1847,28 @@ task goes here, not into the current task's diff.)*
 
 ---
 
+## Task 21: Fix `"[object Object]"` in evidence-bearing dataframe exports
+
+**Status: COMPLETE.** Streamlit's per-`st.dataframe` CSV download button
+stringifies cells client-side; a Python list/dict cell (evidence, summary,
+provenance from various `to_dict()` calls) rendered as "[object Object]".
+Added a shared `_flatten_for_display()` helper and applied it at the 8
+call sites that genuinely carry nested list/dict columns (attributes,
+relationships, quality, semantic candidates, relevance candidates,
+column profiles, detected issues, transformation proposals). Confirmed 3
+other flagged sites (confirmations, findings expander, changes) are already
+flat and left untouched. Confirmed the JSON download_button export
+(`json.dumps(cleaning_result.to_dict(), default=str)`) was never affected,
+since every `to_dict()` in that chain recursively flattens to plain
+dicts/lists before `json.dumps` runs — left unchanged.
+
+Full suite green (143 passed). Do not reopen — file bugs as new tasks.
+
+---
+
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(Tasks 1-17, 19, and 20 are complete. Task 18 (folder hierarchy + UI) is
+*(Tasks 1-17, 19-21 are complete. Task 18 (folder hierarchy + UI) is
 fully specced, not started.)*
 
 

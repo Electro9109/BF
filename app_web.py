@@ -301,6 +301,36 @@ def init_session():
             st.session_state[k] = v
 
 
+def _flatten_for_display(rows: list[dict]) -> list[dict]:
+    """Flatten any list/dict-valued cell into a display-safe string.
+
+    Streamlit's built-in per-st.dataframe CSV download button
+    stringifies cell values client-side (JavaScript); a Python
+    list/dict cell (e.g. an `evidence` or `provenance` field straight
+    from a `to_dict()`) renders as "[object Object]" instead of
+    anything useful. This keeps those values readable both on-screen
+    and in that CSV export. It does not touch the proper JSON
+    `st.download_button` export, which serializes `to_dict()` output
+    directly in Python via `json.dumps` and was confirmed unaffected
+    (Task 21).
+    """
+
+    def _flatten_value(value):
+        if isinstance(value, list):
+            if all(isinstance(item, dict) for item in value):
+                parts = []
+                for item in value:
+                    label = item.get("locator") or item.get("ref_id") or item.get("id")
+                    parts.append(str(label) if label else json.dumps(item, default=str))
+                return ", ".join(parts)
+            return ", ".join(str(item) for item in value)
+        if isinstance(value, dict):
+            return ", ".join(f"{key}={val}" for key, val in value.items())
+        return value
+
+    return [{key: _flatten_value(value) for key, value in row.items()} for row in rows]
+
+
 def _reset_cleaning_result_on_purpose_change() -> None:
     """Drop stale cleaning output when purpose changes (proposals differ by purpose)."""
     st.session_state.cleaning_result = None
@@ -935,15 +965,15 @@ with tab_eda:
             st.caption("Statistical observations, semantic candidates, and relevance are shown separately. Candidate meanings require review.")
             analysis_tabs = st.tabs(["Attributes", "Relationships", "Quality", "Semantic Candidates", "Unknowns / Confirmation", "Summary"])
             with analysis_tabs[0]:
-                st.dataframe(pd.DataFrame([attribute.to_dict() for attribute in analysis_bundle.eda.attributes]), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(_flatten_for_display([attribute.to_dict() for attribute in analysis_bundle.eda.attributes])), use_container_width=True, hide_index=True)
             with analysis_tabs[1]:
                 relationship_rows = [finding.to_dict() for finding in analysis_bundle.eda.findings if finding.category in {"relationship", "temporal"}]
-                st.dataframe(pd.DataFrame(relationship_rows) if relationship_rows else pd.DataFrame({"finding": ["No relationship finding was established."]}), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(_flatten_for_display(relationship_rows)) if relationship_rows else pd.DataFrame({"finding": ["No relationship finding was established."]}), use_container_width=True, hide_index=True)
             with analysis_tabs[2]:
                 quality_rows = [finding.to_dict() for finding in analysis_bundle.eda.findings if finding.category in {"quality", "distribution"}]
-                st.dataframe(pd.DataFrame(quality_rows) if quality_rows else pd.DataFrame({"finding": ["No quality finding was established."]}), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(_flatten_for_display(quality_rows)) if quality_rows else pd.DataFrame({"finding": ["No quality finding was established."]}), use_container_width=True, hide_index=True)
             with analysis_tabs[3]:
-                st.dataframe(pd.DataFrame([candidate.to_dict() for candidate in analysis_bundle.semantic.candidates]), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(_flatten_for_display([candidate.to_dict() for candidate in analysis_bundle.semantic.candidates])), use_container_width=True, hide_index=True)
             with analysis_tabs[4]:
                 for unknown in analysis_bundle.semantic.unknowns:
                     st.markdown(f"- {unknown}")
@@ -974,12 +1004,12 @@ with tab_eda:
             with analysis_tabs[5]:
                 st.text(analysis_bundle.summary)
                 if analysis_bundle.relevance is not None:
-                    st.dataframe(pd.DataFrame([item.to_dict() for item in analysis_bundle.relevance.candidates]), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(_flatten_for_display([item.to_dict() for item in analysis_bundle.relevance.candidates])), use_container_width=True, hide_index=True)
 
 
         with st.expander("Column profiles", expanded=True):
             st.dataframe(
-                pd.DataFrame([column.to_dict() for column in eda_result.attributes]),
+                pd.DataFrame(_flatten_for_display([column.to_dict() for column in eda_result.attributes])),
                 use_container_width=True,
                 hide_index=True,
             )
@@ -1033,8 +1063,8 @@ with tab_eda:
             
             if issues:
                 st.markdown("#### Detected Issues")
-                st.dataframe(pd.DataFrame([issue.to_dict() for issue in issues]), use_container_width=True, hide_index=True)
-                
+                st.dataframe(pd.DataFrame(_flatten_for_display([issue.to_dict() for issue in issues])), use_container_width=True, hide_index=True)
+
             if proposals:
                 st.markdown("#### Transformation Proposals")
                 # Show rich proposal info
@@ -1044,7 +1074,7 @@ with tab_eda:
                     # Flatten some fields for display
                     d["evidence_str"] = ", ".join(e["locator"] or e["ref_id"] for e in d.get("evidence", []))
                     proposal_rows.append(d)
-                st.dataframe(pd.DataFrame(proposal_rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(_flatten_for_display(proposal_rows)), use_container_width=True, hide_index=True)
                 
                 proposal_labels = {p.proposal_id: f"{p.action} on {p.target} (confidence: {p.confidence})" for p in proposals}
                 approved = st.multiselect(
@@ -1084,7 +1114,7 @@ with tab_eda:
                 col1, col2 = st.columns(2)
                 col1.metric("Changes applied", len(cleaning_result.changes))
                 col2.metric("Unresolved issues", len(cleaning_result.unresolved_issue_ids))
-                
+
                 st.dataframe(pd.DataFrame([change.to_dict() for change in cleaning_result.changes]), use_container_width=True, hide_index=True)
                 
                 if cleaning_result.validation:
