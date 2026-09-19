@@ -1702,9 +1702,10 @@ patch application and nobody caught it until now.
 below) rather than inside this task, per this task's own non-negotiable
 (tests only, no logic changes).
 
-Full suite: 141 passed, 2 skipped, 0 failed, 0 warnings — the permanent
+Full suite: 143 passed, 0 skipped, 0 failed, 0 warnings — the permanent
 "expect this one failure" asterisk that persisted across Tasks 1-19 is
-gone. Do not reopen — file bugs as new tasks.
+gone. (The test runs where the data exists, skips where it doesn't — this
+is the intended behavior.) Do not reopen — file bugs as new tasks.
 
 ---
 
@@ -1737,7 +1738,7 @@ in a loop-local dict instead, decoupled from the field's pre-loop value.
 Verified via the two tests written for Task 19 (confirmed failing against
 the pre-fix code, now passing) plus every pre-existing test touching this
 path (`test_cleaning_integration.py`, `test_analysis.py`) still green — no
-regression. Full suite: 141 passed, 2 skipped, 0 failed. Do not reopen —
+regression. Full suite: 143 passed, 0 skipped, 0 failed. Do not reopen —
 file bugs as new tasks.
 
 ### Objective
