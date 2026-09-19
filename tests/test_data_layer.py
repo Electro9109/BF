@@ -5,6 +5,7 @@ from data.experiments_loader import ExperimentValidationWarning, load_experiment
 from data.loader import load_and_chunk_data
 from data.schemas import Chunk
 from data.bf_experiment_schema import ExperimentRow
+from config.paths import EXPERIMENTS_CSV
 
 
 def test_document_loader_returns_generic_chunks():
@@ -51,6 +52,10 @@ def test_experiment_loader_repairs_derived_temperature(tmp_path):
     assert result.loc[0, "Tm_Ts"] == 200
 
 
+@pytest.mark.skipif(
+    not EXPERIMENTS_CSV.exists(),
+    reason=f"requires real plant data at {EXPERIMENTS_CSV} (gitignored, not present in this environment)",
+)
 def test_existing_experiment_gaps_are_reported_and_retained():
     with pytest.warns(ExperimentValidationWarning, match="missing value"):
         result = load_experiments_df()

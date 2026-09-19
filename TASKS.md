@@ -1680,10 +1680,65 @@ session state). Two direct conflicts with your stated direction:
 
 ## Task 19 — Test-suite health: coverage gaps, permanent-failure hygiene, pytest config
 
-*(Written now per user direction — "task 19 iff task 18 is completely
-defined." Sequenced to run before Task 18 is implemented, not after —
-cleaner to have solid test infrastructure in place before a UI revamp
-touches a lot of files.)*
+**Status: COMPLETE.** `tests/test_similarity.py` and `tests/test_cleaning_context.py`
+added, both using real logic (monkeypatched data sources, not fully-mocked
+behavior) and both confirmed meaningful by temporarily breaking the
+underlying code and watching the new tests catch it.
+`test_existing_experiment_gaps_are_reported_and_retained` now uses
+`@pytest.mark.skipif(not EXPERIMENTS_CSV.exists(), ...)` — skips cleanly
+here, but automatically runs as a real regression check against the actual
+data on any machine that has `ignore/SMRF.csv`. `pyproject.toml` added with
+explicit, reasoned `filterwarnings` (found and fixed a mistake in my own
+first draft along the way: `ConstantInputWarning` is a `RuntimeWarning`
+subclass from `scipy.stats`, not a plain `UserWarning` — caught by actually
+verifying the filter suppressed it, not by assuming the category was
+right). Also fixed a leftover from Task 13 found while touching
+`config/bf_ml.py` for the similarity tests: its docstring still said
+"Sinter-domain configuration used by the current BF prototype" — Task 13's
+spec required this exact fix but it was dropped during that task's manual
+patch application and nobody caught it until now.
+
+**Writing these tests surfaced a real bug**, now fixed as Task 20 (see
+below) rather than inside this task, per this task's own non-negotiable
+(tests only, no logic changes).
+
+Full suite: 141 passed, 2 skipped, 0 failed, 0 warnings — the permanent
+"expect this one failure" asterisk that persisted across Tasks 1-19 is
+gone. Do not reopen — file bugs as new tasks.
+
+---
+
+## Task 20 — Fix `create_cleaning_context`'s semantic-status overwrite bug
+
+**Status: COMPLETE.** Found while writing Task 19's `test_cleaning_context.py`
+(not from a general bug hunt). An attribute like `temperature_kg` gets
+multiple semantic candidates (e.g. `temperature_kg:unit` and
+`temperature_kg:metric` — confirmed via direct debugging, this is the
+normal case, not a contrived edge case). `create_cleaning_context`'s
+enrichment loop iterated all candidates and unconditionally overwrote
+`attr_prof.semantic_status` on every match, so a real `USER_CONFIRMED`
+status from a human confirming one candidate could be silently clobbered
+back to `INFERRED` by an unconfirmed sibling candidate processed
+afterward — last-write-wins instead of any real precedence. Directly
+against the project's own stated philosophy (distinguish observed facts
+vs. inferred interpretations vs. user-confirmed meaning) — this let a real
+human confirmation get silently lost.
+
+Fixed by tracking the highest-precedence status seen per attribute during
+the loop (`USER_CONFIRMED` > `CONFLICTING` > `UNKNOWN` > `INFERRED`),
+upgrading only, never downgrading. One subtlety caught before it became a
+second bug: `AttributeCleaningProfile.semantic_status`'s dataclass default
+is `"UNKNOWN"` (meaning "no candidates seen at all"), which is a *higher*
+raw priority than a legitimate first `"INFERRED"` status — comparing
+against that field default directly would have wrongly suppressed the
+normal no-human-context case. Fixed by tracking best-status-per-attribute
+in a loop-local dict instead, decoupled from the field's pre-loop value.
+
+Verified via the two tests written for Task 19 (confirmed failing against
+the pre-fix code, now passing) plus every pre-existing test touching this
+path (`test_cleaning_integration.py`, `test_analysis.py`) still green — no
+regression. Full suite: 141 passed, 2 skipped, 0 failed. Do not reopen —
+file bugs as new tasks.
 
 ### Objective
 Three independent fixes, all grounded in an actual audit (not a general
@@ -1793,9 +1848,8 @@ task goes here, not into the current task's diff.)*
 
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(Tasks 1-17 are now complete. Task 18 (folder hierarchy + UI) and Task 19
-(test-suite health) are fully specced, not started. Task 19 is intended to
-run before Task 18's implementation.)*
+*(Tasks 1-17, 19, and 20 are complete. Task 18 (folder hierarchy + UI) is
+fully specced, not started.)*
 
 
 

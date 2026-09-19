@@ -1,0 +1,18 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# Task 19: explicit warning policy instead of running on pytest's unstated
+# defaults. Proven to matter -- running with -W default instead of pytest's
+# own filter changed whether a currently-passing pytest.warns() test passed,
+# which means warning behavior was previously an accident of pytest defaults,
+# not a project decision. Each filter below documents *why* it's expected.
+filterwarnings = [
+    # Known-benign: parse/analysis.py's correlation computation is exercised
+    # against a deliberately constant-value test column in
+    # test_cleaner_applies_only_approved_proposals_and_records_lineage;
+    # correlation is mathematically undefined for a constant array (division
+    # by zero standard deviation), so both numpy's RuntimeWarning and scipy's
+    # (via pandas) ConstantInputWarning are expected there, not a bug.
+    "ignore:invalid value encountered in divide:RuntimeWarning",
+    "ignore:An input array is constant:scipy.stats.ConstantInputWarning",
+]

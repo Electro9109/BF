@@ -147,11 +147,28 @@ def create_cleaning_context(
                      object.__setattr__(attr_prof, "relationships", attr_prof.relationships + (finding.to_dict(),))
 
     # 3. Enrich with semantic candidates
+    # Task 20 fix: an attribute can have multiple semantic candidates (e.g.
+    # "temperature_kg:unit" and "temperature_kg:metric"). The original code
+    # unconditionally overwrote semantic_status on each candidate processed,
+    # so a real USER_CONFIRMED status from one candidate could be silently
+    # clobbered back to INFERRED by a later, unconfirmed candidate for the
+    # same attribute -- last-write-wins instead of a real precedence. Fixed
+    # by tracking the best status seen per attribute during this loop and
+    # only ever upgrading, never downgrading -- tracked separately from the
+    # dataclass field's own default ("UNKNOWN", meaning "no candidates seen
+    # yet"), since that default must not outrank a real first INFERRED.
+    _STATUS_PRIORITY: dict[KnowledgeState, int] = {
+        "INFERRED": 0,
+        "UNKNOWN": 1,
+        "CONFLICTING": 2,
+        "USER_CONFIRMED": 3,
+    }
+    _best_status_priority: dict[str, int] = {}
     for candidate in bundle.semantic.candidates:
         if candidate.attribute in profiles:
             attr_prof = profiles[candidate.attribute]
             object.__setattr__(attr_prof, "semantic_candidates", attr_prof.semantic_candidates + (candidate.to_dict(),))
-            
+
             # Determine semantic status based on human context
             status: KnowledgeState = "INFERRED"
             if human_context:
@@ -162,7 +179,10 @@ def create_cleaning_context(
                     status = "CONFLICTING"
                 elif hs == "unknown":
                     status = "UNKNOWN"
-            object.__setattr__(attr_prof, "semantic_status", status)
+            priority = _STATUS_PRIORITY[status]
+            if priority > _best_status_priority.get(candidate.attribute, -1):
+                _best_status_priority[candidate.attribute] = priority
+                object.__setattr__(attr_prof, "semantic_status", status)
 
 
     return CleaningContext(
