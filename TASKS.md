@@ -1576,7 +1576,7 @@ of "looks fine to me."
 
 ---
 
-## Parking Lot
+## Task 19 — Test-suite health: coverage gaps, permanent-failure hygiene, pytest config
 
 **Status: COMPLETE.** `tests/test_similarity.py` and `tests/test_cleaning_context.py`
 added, both using real logic (monkeypatched data sources, not fully-mocked
