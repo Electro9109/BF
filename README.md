@@ -230,15 +230,20 @@ python -m ml.train
 │   ├── paths.py                  All directory paths                          ← change folders here
 │   └── retrieval.py              Chunking strategy, TOP_K
 ├── data/ & data_files/
-│   ├── experiments_loader.py     Loads data_result.xlsx
+│   ├── loader.py, parser.py, schemas.py   Generic document ingestion (RAG-side)
 │   └── data_result.xlsx          Raw experimental dataset
+├── departments/blast_furnace/    Blast Furnace department: everything domain-specific
+│   ├── config.py                 ML_FEATURES / ML_TARGET
+│   ├── bf_experiment_schema.py   Historical experiment dataset schema
+│   ├── experiments_loader.py     Loads data_result.xlsx into ExperimentRow records
+│   ├── feature_processing.py     Feature engineering + RangeScaler normalization (chemistry/atmosphere/burden/interactions)
+│   └── department.py             BlastFurnaceDepartment (the Department protocol implementation)
 ├── docs/                         Metallurgical theory .txt files (user-supplied)
 ├── EmbedModels/                  Sentence-embedding weights (auto-downloaded)
 ├── LocalModels/                  Generation LLM weights (user-supplied)
 ├── MLModels/                     Trained ML model .pkl files + benchmark CSV
 ├── ml/
 │   ├── condition_parser.py       Hybrid regex+LLM parser; normalisation & warnings
-│   ├── feature_processing.py     Feature engineering + RangeScaler normalization (chemistry/atmosphere/burden/interactions)
 │   ├── predictor.py              Single-sample & batch prediction; confidence scoring
 │   ├── similarity.py             Nearest-neighbour distance for confidence estimation
 │   └── train.py                  RandomizedSearchCV training; per-target model selection
@@ -248,6 +253,15 @@ python -m ml.train
 ├── retrieval/                    FAISS index, embeddings, chunk ranking
 └── llm/                          Offline LLM loader and generator wrapper
 ```
+
+**Repo layout rule:** `departments/<name>/` holds domain-specific schema,
+config, parsers, and feature ranges for one department (Blast Furnace is
+the only one implemented so far). `parse/`, `pipeline/`, `ml/`,
+`retrieval/`, and `llm/` are generic machinery that consumes a
+department's config rather than defining it — even where, like `ml/`
+today, that machinery is currently only proven against Blast Furnace and
+still has some values hardcoded that should eventually come from the
+`Department` contract instead.
 
 ---
 

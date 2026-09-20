@@ -1,4 +1,4 @@
-"""Validate the current BF runtime layout without installing dependencies."""
+"""Validate the current Blast Furnace department's runtime layout (data file, docs, model dirs, imports) without installing dependencies."""
 
 import importlib
 import sys

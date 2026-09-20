@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from config.bf_ml import ML_FEATURES, ML_TARGET
+from departments.blast_furnace.config import ML_FEATURES, ML_TARGET
 from ml.similarity import find_nearest_experiments, nearest_neighbor_distance
 
 
@@ -54,7 +54,7 @@ def test_find_nearest_experiments_returns_top_k_by_cosine_similarity(monkeypatch
         return frame
 
     monkeypatch.setattr(
-        "data.experiments_loader.load_experiments_df",
+        "departments.blast_furnace.experiments_loader.load_experiments_df",
         fake_load_experiments_df,
     )
 
@@ -81,7 +81,7 @@ def test_find_nearest_experiments_drops_rows_missing_required_columns(monkeypatc
     frame["row_index"] = range(1, len(frame) + 1)
 
     monkeypatch.setattr(
-        "data.experiments_loader.load_experiments_df",
+        "departments.blast_furnace.experiments_loader.load_experiments_df",
         lambda *a, **k: frame,
     )
 

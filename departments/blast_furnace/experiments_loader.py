@@ -1,5 +1,5 @@
 """
-data/experiments_loader.py
+departments/blast_furnace/experiments_loader.py
 ─────────────────────────────
 Reads the configured historical experiment CSV -> list[ExperimentRow], and performs the
 physical-integrity repair identified in the analysis notebook
@@ -13,7 +13,7 @@ import warnings
 import pandas as pd
 
 from config.paths import EXPERIMENTS_CSV
-from data.bf_experiment_schema import CSV_COLUMN_MAP, ExperimentRow
+from departments.blast_furnace.bf_experiment_schema import CSV_COLUMN_MAP, ExperimentRow
 
 
 class ExperimentValidationWarning(UserWarning):

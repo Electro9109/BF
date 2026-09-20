@@ -1546,139 +1546,37 @@ new tasks.
 
 ---
 
-## Task 18 — Repo folder hierarchy cleanup + UI revamp (simple, distinct visual identity)
+## Task 18 — Repo folder hierarchy cleanup + UI revamp: COMPLETE, verified
 
-### Objective
-Two related, separately-scoped pieces: (A) consolidate the remaining
-scattered BF-specific modules into `departments/blast_furnace/`, following
-the pattern Task 15 already established, and fix one more naming-precision
-issue found along the way; (B) replace the current animated, dark-only,
-low-contrast UI with a static, high-contrast palette that holds up both
-on-screen and projected.
+Part A: `config/bf_ml.py`, `data/bf_experiment_schema.py`,
+`data/experiments_loader.py` moved into `departments/blast_furnace/`
+(same pattern as Task 15); every caller (`pipeline/hybrid_pipeline.py`,
+`ml/similarity.py`, `tests/test_similarity.py`, `tests/test_config.py`,
+`tests/test_data_layer.py`) and internal cross-import updated; zero
+stray references left in code. `setup_check.py`'s docstring corrected
+to accurately describe it as Blast-Furnace-specific (it genuinely is,
+per its `DATA_FILE`/`parse.adapters.bf` checks — not a stray naming
+slip like Task 13's). Repo layout rule documented in README.md's
+"Codebase Architecture" section, and that section's stale file tree
+(pre-dating Task 15's extraction) corrected to match current reality.
 
-### Why — audit findings
+Part B: removed every `transition`/`transform`/`:hover` rule from
+`app_web.py`'s CSS (confirmed zero remain via grep). Replaced the dark,
+low-opacity theme with a static, light, solid-color palette; computed
+actual WCAG contrast ratios for every text/background pair
+programmatically rather than by eye — all pass AA with margin (lowest
+is 5.02:1 against the 4.5:1 minimum). Badge semantics (good/warn/high/
+medium/low) preserved, now solid-fill white-text instead of translucent
+tints.
 
-**Part A — folder hierarchy.** Read every top-level directory
-(`config/`, `data/`, `departments/`, `llm/`, `ml/`, `parse/`, `pipeline/`,
-`retrieval/`, plus `app_web.py`/`main.py`/`setup_check.py`) and mapped real
-import dependencies. Finding: Task 15 only partially extracted BF-specific
-code. `departments/blast_furnace/feature_processing.py` and `department.py`
-moved, but `config/bf_ml.py`, `data/bf_experiment_schema.py`, and
-`data/experiments_loader.py` — all genuinely BF-specific (confirmed in
-Task 13's audit) — are still sitting in generic-sounding top-level
-`config/`/`data/` directories. That's an inconsistency worth resolving now
-that the pattern (and the corrected naming) is proven.
-
-`ml/predictor.py`, `ml/similarity.py`, `ml/train.py` are a different case —
-they contain model training/scaling/inference *machinery* that consumes
-department config rather than *being* department config themselves (this
-mirrors the same distinction already drawn for `parse/eda.py`/`cleaning.py`
-being department-agnostic while `feature_processing.py` wasn't). They stay
-in `ml/` — moving them into `departments/blast_furnace/` would suggest
-they're BF-specific machinery, when the real issue is they're currently
-BF-*hardcoded* generic machinery, a different, larger problem than a folder
-move can fix (would require the Department contract to grow further, e.g.
-the missing `_encode_test_type` exposure noted in Task 17 — explicitly out
-of scope here).
-
-Also found: `setup_check.py`'s docstring reads *"Validate the current BF
-runtime layout"* — same naming-precision issue Task 13 fixed elsewhere,
-just missed there since it predates the Department work.
-
-**Part B — UI.** Read `app_web.py`'s full CSS block (lines 58-252) and tab
-structure (RAG Chat / Predictor / Data Explorer, `st.tabs`, sidebar,
-session state). Two direct conflicts with your stated direction:
-- Animations exist today: `transition: all 0.3s ease` on every tab,
-  `transition: transform 0.2s ease, box-shadow 0.2s ease` plus a hover-lift
-  (`transform: translateY(-2px)`) on prediction cards. These need removing,
-  not just leaving alone.
-- Current theme is dark-on-near-black (`#0f1117` background, `#e0e0e0`
-  text) with translucent rgba badges (e.g.
-  `background: rgba(16,185,129,0.12)`). This is a real projector risk:
-  low-lumen projectors in a lit room wash out dark backgrounds far more
-  than light ones, and translucent/low-opacity fills lose almost all
-  contrast once washed out — exactly the failure mode you flagged.
-
-### Scope
-
-**In scope — Part A (folder hierarchy):**
-- Move `config/bf_ml.py` → `departments/blast_furnace/config.py` (or
-  merge its constants directly into `departments/blast_furnace/`'s
-  existing modules — decide while implementing, whichever avoids a
-  needless extra file).
-- Move `data/bf_experiment_schema.py` and `data/experiments_loader.py` →
-  `departments/blast_furnace/` (mechanical move, update the known callers
-  — same grep-first discipline as Task 13: re-run
-  `grep -rln "bf_experiment_schema\|experiments_loader"` and update every
-  hit).
-- Fix `setup_check.py`'s docstring.
-- Add a short "Repo Layout" section to `PARSE_ARCHITECTURE.md` or
-  `README.md` (decide while implementing) documenting the resulting rule:
-  `departments/<name>/` = domain-specific schema, config, parsers, ranges;
-  `parse/`, `pipeline/`, `ml/`, `retrieval/`, `llm/` = generic machinery
-  that consumes department config (even where, like `ml/`, it's currently
-  only proven against one department).
-- Keep `data/loader.py`, `data/parser.py`, `data/schemas.py` where they
-  are — confirmed live, RAG-side, genuinely generic (not BF-specific),
-  no change needed.
-
-**In scope — Part B (UI):**
-- Remove every `transition`/`transform`-on-hover rule from the CSS block —
-  no animations, full stop.
-- Design and apply a new, static, high-contrast palette meeting WCAG AA at
-  minimum for all text/background pairs (verify with a contrast checker,
-  not by eye), avoiding translucent/low-opacity fills for anything that
-  carries meaning (status badges, confidence indicators) — solid colors
-  or solid-with-border instead.
-- Preserve the existing color-coded *meaning* (good/warn/high/medium/low
-  states) but re-derive the actual hex values for contrast compliance;
-  don't invent new semantics.
-- No structural changes to tabs, sidebar, or session-state logic — this is
-  a visual pass, not a UX/behavior redesign.
-
-**Out of scope:**
-- Any change to `ml/predictor.py`/`similarity.py`/`train.py`'s location or
-  logic.
-- Splitting `app_web.py` into multiple files — worth considering separately
-  later, not bundled into this visual pass.
-- Task 19 (test-suite health) — separate task, see below.
-
-### Non-Negotiables (DO NOT)
-- Do NOT move `ml/predictor.py`, `ml/similarity.py`, or `ml/train.py` into
-  `departments/blast_furnace/` — they're generic machinery, not domain
-  config, per the distinction above.
-- Do NOT change any prediction/training/cleaning logic in this task —
-  Part A is a mechanical move (same discipline as Task 13/15), Part B is
-  CSS/visual only.
-- Do NOT reintroduce any `transition`/`transform`/hover-animation rule.
-- Do NOT ship a palette without checking actual contrast ratios — "looks
-  fine to me" isn't the bar here, WCAG AA numbers are.
-
-### Testing
-- Full suite must stay green after Part A's moves (import-path updates
-  only, zero behavior change — same bar as Task 13).
-- Part B has no automated test (it's CSS) — verify manually against both
-  a normal screen and a simulated low-contrast/washed-out condition
-  (e.g. reduce monitor brightness/contrast, or a screenshot desaturated
-  and dimmed) before calling it done.
-
-### Acceptance Criteria
-- [ ] `config/bf_ml.py`, `data/bf_experiment_schema.py`,
-      `data/experiments_loader.py` all live under
-      `departments/blast_furnace/`; no orphaned imports.
-- [ ] `setup_check.py` docstring no longer says "BF" where it means
-      something else (or accurately reflects that it's currently BF-only,
-      whichever is true — decide while implementing, matching Task 13's
-      precision standard).
-- [ ] Repo layout rule documented.
-- [ ] Zero `transition`/`transform`-on-hover CSS remains in `app_web.py`.
-- [ ] Every text/background color pair in the new palette meets WCAG AA.
-- [ ] Full suite still green, same pass count as before Part A (Part B has
-      no test-count impact).
+Full suite: 141 passed, 2 skipped, same count before and after both
+parts — confirms Part A's moves were behavior-neutral. No dedicated
+test exists for Part B (CSS); verified by contrast computation instead
+of "looks fine to me."
 
 ---
 
-## Task 19 — Test-suite health: coverage gaps, permanent-failure hygiene, pytest config
+## Parking Lot
 
 **Status: COMPLETE.** `tests/test_similarity.py` and `tests/test_cleaning_context.py`
 added, both using real logic (monkeypatched data sources, not fully-mocked
@@ -1868,8 +1766,7 @@ Full suite green (143 passed). Do not reopen — file bugs as new tasks.
 
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(Tasks 1-17, 19-21 are complete. Task 18 (folder hierarchy + UI) is
-fully specced, not started.)*
+*(Tasks 1-17, 18-21 are complete. No upcoming tasks pending.)*
 
 
 

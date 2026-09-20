@@ -45,12 +45,12 @@ def find_nearest_experiments(features: dict, k: int = 3) -> list:
     Each result dict contains the original experiment's feature values,
     its ML_TARGET value, its 1-based row_index, and a 'similarity' score.
 
-    NOTE: uses BF configuration from config.bf_ml and the historical
+    NOTE: uses BF configuration from departments.blast_furnace.config and the historical
     experiment loader.
     """
     from sklearn.preprocessing import StandardScaler
-    from config.bf_ml import ML_FEATURES, ML_TARGET
-    from data.experiments_loader import load_experiments_df
+    from departments.blast_furnace.config import ML_FEATURES, ML_TARGET
+    from departments.blast_furnace.experiments_loader import load_experiments_df
 
     df = load_experiments_df()
     target_col = ML_TARGET.replace("-", "_")

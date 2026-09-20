@@ -1,10 +1,10 @@
 import pandas as pd
 import pytest
 
-from data.experiments_loader import ExperimentValidationWarning, load_experiments_df
+from departments.blast_furnace.experiments_loader import ExperimentValidationWarning, load_experiments_df
 from data.loader import load_and_chunk_data
 from data.schemas import Chunk
-from data.bf_experiment_schema import ExperimentRow
+from departments.blast_furnace.bf_experiment_schema import ExperimentRow
 from config.paths import EXPERIMENTS_CSV
 
 
@@ -62,4 +62,4 @@ def test_existing_experiment_gaps_are_reported_and_retained():
 
     assert len(result) == 131
     assert result["row_index"].iloc[0] == 1
-    assert ExperimentRow.__module__ == "data.bf_experiment_schema"
+    assert ExperimentRow.__module__ == "departments.blast_furnace.bf_experiment_schema"
