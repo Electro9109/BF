@@ -1764,9 +1764,50 @@ Full suite green (143 passed). Do not reopen — file bugs as new tasks.
 
 ---
 
+## Task 22 — Close data-analysis phase; kick off Prediction (Kaggle) + RAG phase: COMPLETE, verified
+
+Part A: cleaning/analysis phase (Tasks 1-21) closed out — no known open
+bugs, this entry is the close-out note.
+
+Part B: `ml/export_training_data.py` and `ml/import_trained_model.py`
+added, both reusing `load_and_build()` as-is (no feature-engineering
+duplication). Export writes `training_data.npz` (X + per-target y),
+`feature_names.json`, `scalers.pkl`. Import validates a candidate
+pickle actually exposes `.predict()` and can predict on a dummy row
+shaped like the real feature vector *before* writing anything, then
+updates `benchmark_results.csv` so `Predictor(model_type="best")`
+picks it up with zero `predictor.py` changes — confirmed by reading
+`Predictor._load()`, which already has no hardcoded model-type
+knowledge. `KAGGLE_TRAINING.md` documents the full contract.
+`tests/test_kaggle_bridge.py` (6 tests) covers the export shape, a
+real round-trip with a fitted `LinearRegression`, re-import updating
+rather than duplicating a benchmark row, and three validation-rejection
+paths (no `.predict`, wrong feature shape, unknown target).
+
+Part C: `_order_for_context()` added to `pipeline/rag_pipeline.py` —
+reorders ranked matches so the top two ranks sit at the start and end
+of the assembled LLM context (Lost-in-the-Middle mitigation), pushing
+weaker matches toward the middle. Matches returned to callers stay in
+original rank order (verified: UI diagnostics panel and the
+hallucination-guard overlap check are unaffected). Two new tests in
+`tests/test_llm_pipeline.py` confirm the reorder function directly and
+confirm `answer_question()`'s assembled context actually uses it.
+
+The larger canonical-representation / index-creator / asset-catalogue
+foundation from the storage/indexing research is deliberately **not**
+started here — real next-phase work, left for its own task once this
+batch is verified on `origin/master`.
+
+Full suite: 149 passed, 2 skipped (141 passed/2 skipped before this
+task, +8 new tests, 0 regressions).
+
+---
+
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(Tasks 1-17, 18-21 are complete. No upcoming tasks pending.)*
+*(Tasks 1-17, 18-22 are complete. No upcoming tasks pending — the
+canonical-representation/index-creator foundation noted in Task 22 is
+future work, not yet specced as a numbered task.)*
 
 
 

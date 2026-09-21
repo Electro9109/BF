@@ -21,6 +21,32 @@ def build_engine(docs_dir: str) -> tuple[RetrievalEngine | None, list[Chunk]]:
     return engine, chunks
 
 
+def _order_for_context(matches: list) -> list:
+    """Reorder ranked matches so top-ranked evidence sits at the start AND
+    end of the assembled context, with lower-ranked matches pushed toward
+    the middle.
+
+    "Lost in the Middle" (Liu et al.) found LLMs are least reliable at
+    using information placed in the middle of a long context, even for
+    models built for long windows -- a plain top-to-bottom concatenation
+    of ranked matches puts everything after rank 1 progressively deeper
+    into that weak spot. This does not change what's returned to callers
+    (the UI diagnostics panel and hallucination-guard overlap check both
+    depend on the original rank order) -- only the order the text is
+    concatenated in for the LLM prompt.
+    """
+    ordered = [None] * len(matches)
+    left, right = 0, len(matches) - 1
+    for i, match in enumerate(matches):
+        if i % 2 == 0:
+            ordered[left] = match
+            left += 1
+        else:
+            ordered[right] = match
+            right -= 1
+    return ordered
+
+
 def answer_question(
     question: str,
     search_query: str,
@@ -54,9 +80,10 @@ def answer_question(
             "Try rephrasing, or upload the relevant document using the sidebar."
         ), matches
 
+    ranked = list(enumerate(matches, 1))  # [(original_rank, (chunk, score)), ...]
     context_parts = []
-    for idx, (chunk, score) in enumerate(matches, 1):
-        context_parts.append(f"[Source {idx}: {chunk.source}]\n{chunk.content}")
+    for original_rank, (chunk, score) in _order_for_context(ranked):
+        context_parts.append(f"[Source {original_rank}: {chunk.source}]\n{chunk.content}")
     context = "\n\n".join(context_parts)[:max_context_chars]
 
     try:
