@@ -81,10 +81,9 @@ class RetrievalEngine:
         matched_topic = self._topic_detector(q_lower)
         candidates, effective_topic = self._candidate_filter(self.chunks, matched_topic)
         if matched_topic and effective_topic is None:
-                print(
-                    f"[RAG] WARN: topic filter '{matched_topic}' returned "
-                    "too few chunks - falling back to full corpus."
-                )
+            # Topic filter returned too few chunks - falling back to full corpus
+            # This is expected behavior for rare topics, not an error
+            pass
 
         if not candidates:
             return []
