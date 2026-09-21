@@ -1803,9 +1803,28 @@ task, +8 new tests, 0 regressions).
 
 ---
 
+## Task 23 — Simplify Data Analyzer's responses: COMPLETE, verified
+
+**Implemented simplified default views for Data Explorer sub-tabs:**
+
+- **Attributes tab:** Shows column name, type, missing %, unique count, and summary. Full detail available via "Show full attribute details" expander.
+- **Relationships tab:** Shows finding type, message (plain-language), and evidence count. Full detail available via "Show full relationship details" expander.
+- **Quality tab:** Shows finding type, message (plain-language), and evidence count. Full detail available via "Show full quality details" expander.
+- **Semantic Candidates tab:** Shows attribute, candidate meaning, confidence, and knowledge state. Sorted by confidence descending (highest-confidence candidates surface first). Full detail available via "Show full candidate details" expander.
+- **Unknowns / Confirmation tab:** Left unchanged (already user-friendly list-based interface).
+- **Summary tab:** Left unchanged (already plain-text summary).
+
+**Display-layer only:** No changes to `parse/eda.py`, `parse/cleaning.py`, or `parse/semantic_analysis.py`. Evidence-export CSV/JSON paths from Task 21 remain untouched.
+
+**Full statistical detail preserved:** All raw dataframes remain accessible via expanders, ensuring auditors and domain experts can still access the full detail when needed.
+
+Full suite: 151 passed, 0 skipped (0 regressions from Task 22 baseline).
+
+---
+
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(Tasks 1-17, 18-22 are complete. No upcoming tasks pending — the
+*(Tasks 1-17, 18-23 are complete. No upcoming tasks pending — the
 canonical-representation/index-creator foundation noted in Task 22 is
 future work, not yet specced as a numbered task.)*
 

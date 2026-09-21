@@ -329,6 +329,51 @@ def _flatten_for_display(rows: list[dict]) -> list[dict]:
     return [{key: _flatten_value(value) for key, value in row.items()} for row in rows]
 
 
+def _simplify_attribute_row(row: dict) -> dict:
+    """Simplify a ColumnProfile row for display.
+
+    Shows: name, type, key stats (missing%, unique count), and summary.
+    Full detail available via expander.
+    """
+    return {
+        "Column": row["name"],
+        "Type": row["inferred_type"],
+        "Missing %": f"{row['missing_fraction']:.1%}",
+        "Unique": row["unique_count"],
+        "Summary": str(row.get("summary", ""))[:100] + "..." if len(str(row.get("summary", ""))) > 100 else str(row.get("summary", "")),
+    }
+
+
+def _simplify_finding_row(row: dict) -> dict:
+    """Simplify an EDAFinding row for display.
+
+    Shows: kind, message (plain-language), evidence count.
+    Full detail available via expander.
+    """
+    evidence_count = len(row.get("evidence", [])) if isinstance(row.get("evidence"), list) else 0
+    return {
+        "Type": row["kind"],
+        "Finding": row["message"],
+        "Evidence": f"{evidence_count} ref(s)",
+    }
+
+
+def _simplify_semantic_candidate_row(row: dict) -> dict:
+    """Simplify a SemanticCandidate row for display.
+
+    Shows: attribute, candidate meaning, confidence, knowledge state.
+    Full detail available via expander.
+    """
+    confidence = row.get("confidence")
+    conf_str = f"{confidence:.0%}" if confidence is not None else "N/A"
+    return {
+        "Attribute": row["attribute"],
+        "Meaning": row["candidate_meaning"],
+        "Confidence": conf_str,
+        "State": row["knowledge_state"],
+    }
+
+
 def _reset_cleaning_result_on_purpose_change() -> None:
     """Drop stale cleaning output when purpose changes (proposals differ by purpose)."""
     st.session_state.cleaning_result = None
@@ -963,15 +1008,47 @@ with tab_eda:
             st.caption("Statistical observations, semantic candidates, and relevance are shown separately. Candidate meanings require review.")
             analysis_tabs = st.tabs(["Attributes", "Relationships", "Quality", "Semantic Candidates", "Unknowns / Confirmation", "Summary"])
             with analysis_tabs[0]:
-                st.dataframe(pd.DataFrame(_flatten_for_display([attribute.to_dict() for attribute in analysis_bundle.eda.attributes])), use_container_width=True, hide_index=True)
+                # Attributes tab - simplified view with expander for full detail
+                simplified_attrs = [_simplify_attribute_row(attr.to_dict()) for attr in analysis_bundle.eda.attributes]
+                full_attrs = [_flatten_for_display([attr.to_dict()])[0] for attr in analysis_bundle.eda.attributes]
+                st.dataframe(pd.DataFrame(simplified_attrs), use_container_width=True, hide_index=True)
+                with st.expander("Show full attribute details"):
+                    st.dataframe(pd.DataFrame(full_attrs), use_container_width=True, hide_index=True)
             with analysis_tabs[1]:
+                # Relationships tab - simplified view with expander for full detail
                 relationship_rows = [finding.to_dict() for finding in analysis_bundle.eda.findings if finding.category in {"relationship", "temporal"}]
-                st.dataframe(pd.DataFrame(_flatten_for_display(relationship_rows)) if relationship_rows else pd.DataFrame({"finding": ["No relationship finding was established."]}), use_container_width=True, hide_index=True)
+                if relationship_rows:
+                    simplified = [_simplify_finding_row(row) for row in relationship_rows]
+                    full = _flatten_for_display(relationship_rows)
+                    st.dataframe(pd.DataFrame(simplified), use_container_width=True, hide_index=True)
+                    with st.expander("Show full relationship details"):
+                        st.dataframe(pd.DataFrame(full), use_container_width=True, hide_index=True)
+                else:
+                    st.dataframe(pd.DataFrame({"finding": ["No relationship finding was established."]}), use_container_width=True, hide_index=True)
             with analysis_tabs[2]:
+                # Quality tab - simplified view with expander for full detail
                 quality_rows = [finding.to_dict() for finding in analysis_bundle.eda.findings if finding.category in {"quality", "distribution"}]
-                st.dataframe(pd.DataFrame(_flatten_for_display(quality_rows)) if quality_rows else pd.DataFrame({"finding": ["No quality finding was established."]}), use_container_width=True, hide_index=True)
+                if quality_rows:
+                    simplified = [_simplify_finding_row(row) for row in quality_rows]
+                    full = _flatten_for_display(quality_rows)
+                    st.dataframe(pd.DataFrame(simplified), use_container_width=True, hide_index=True)
+                    with st.expander("Show full quality details"):
+                        st.dataframe(pd.DataFrame(full), use_container_width=True, hide_index=True)
+                else:
+                    st.dataframe(pd.DataFrame({"finding": ["No quality finding was established."]}), use_container_width=True, hide_index=True)
             with analysis_tabs[3]:
-                st.dataframe(pd.DataFrame(_flatten_for_display([candidate.to_dict() for candidate in analysis_bundle.semantic.candidates])), use_container_width=True, hide_index=True)
+                # Semantic Candidates tab - simplified view with expander for full detail
+                candidates = analysis_bundle.semantic.candidates
+                if candidates:
+                    simplified = [_simplify_semantic_candidate_row(c.to_dict()) for c in candidates]
+                    full = _flatten_for_display([c.to_dict() for c in candidates])
+                    # Sort by confidence descending
+                    simplified.sort(key=lambda x: float(x["Confidence"].rstrip('%')) if x["Confidence"] != "N/A" else 0, reverse=True)
+                    st.dataframe(pd.DataFrame(simplified), use_container_width=True, hide_index=True)
+                    with st.expander("Show full candidate details"):
+                        st.dataframe(pd.DataFrame(full), use_container_width=True, hide_index=True)
+                else:
+                    st.dataframe(pd.DataFrame({"finding": ["No semantic candidates found."]}), use_container_width=True, hide_index=True)
             with analysis_tabs[4]:
                 for unknown in analysis_bundle.semantic.unknowns:
                     st.markdown(f"- {unknown}")
