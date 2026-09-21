@@ -1822,9 +1822,38 @@ Full suite: 151 passed, 0 skipped (0 regressions from Task 22 baseline).
 
 ---
 
+## Task 24 — Eval harness + PARSE-shaped eval set for the Explainer LLM: COMPLETE, verified
+
+`eval/fidelity_checks.py`: three checks — `numerical_fidelity` (handles
+the fraction-vs-percentage form PARSE itself uses, e.g. attributes'
+`numeric_parse_fraction=0.8` vs message's "80%" — caught as a real gap
+by the test suite, fixed), `causal_language_check` (flags causal
+phrasing introduced for associational/interpretation findings —
+weighted highest per the training-plan review), `limitation_preserved`
+(token-overlap heuristic). 13 unit tests against hand-built pass/fail
+pairs.
+
+`eval/build_parse_eval_set.py`: builds a real PARSE-shaped eval set
+from `DataUnderstanding.profile()` and `DataCleaner.detect()` output —
+not synthetic text, actual `EDAFinding`/`CleaningIssue` objects run
+against a synthetic dataset with deliberately planted issues (so it
+works without real plant data). 2 smoke tests confirm the planted
+issues are actually caught.
+
+`eval/run_comparison.py`: base-vs-fine-tuned comparison runner, ready
+to point at the Kaggle adapter once downloaded (not run as part of
+this task — ships the harness only, per scope). Plugbable generator
+(`--dry-run` smoke-tests the full plumbing without any model loaded,
+confirmed working).
+
+Full suite: 164 passed, 2 skipped (was 149/2 before this task, +15 new
+tests, 0 regressions).
+
+---
+
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(Tasks 1-17, 18-23 are complete. No upcoming tasks pending — the
+*(Tasks 1-17, 18-24 are complete. No upcoming tasks pending — the
 canonical-representation/index-creator foundation noted in Task 22 is
 future work, not yet specced as a numbered task.)*
 
