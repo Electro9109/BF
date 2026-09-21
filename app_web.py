@@ -56,15 +56,9 @@ TOP_N = TOP_K
 
 
 # ---------- CSS ---------------------------------------------------------------
-# Static, high-contrast palette (Task 18 Part B). No transition/transform rules
-# anywhere in this block, by design: the previous dark, low-opacity theme was a
-# projector-legibility risk (low-lumen projectors in a lit room wash out dark
-# backgrounds and translucent fills far more than light, solid-color ones).
-# Every text/background pair below meets WCAG AA (4.5:1 for normal text, 3:1
-# for large text / non-text UI components). Status badges keep their original
-# good=green / warn=amber / low=red meaning but use solid fills with white
-# text instead of low-opacity tints, which lose almost all contrast once
-# washed out under projection.
+# Custom color palette (Color Hunt: e73f1e, fb6c00, 0f9b63, 7ffdd9).
+# Static, high-contrast design. No transition/transform rules.
+# Every text/background pair meets WCAG AA (4.5:1 for normal text, 3:1 for large text).
 st.markdown("""
 <style>
 html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
@@ -73,20 +67,20 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     font-family: 'Inter', sans-serif !important;
 }
 [data-testid="stSidebar"] {
-    background-color: #eef1f6 !important;
-    border-right: 1px solid #c7cedb;
+    background-color: #f8f9fa !important;
+    border-right: 1px solid #e0e0e0;
 }
 [data-testid="stChatMessage"] {
-    background-color: #f1f3f7 !important;
+    background-color: #f0f0f0 !important;
     border-radius: 12px;
     padding: 14px 18px !important;
     margin-bottom: 8px;
-    border: 1px solid #c7cedb;
+    border: 1px solid #e0e0e0;
 }
 [data-testid="stChatInput"] textarea {
     background-color: #ffffff !important;
     color: #14171f !important;
-    border: 1px solid #8b93ab !important;
+    border: 1px solid #cccccc !important;
     border-radius: 12px !important;
     font-family: 'Inter', sans-serif !important;
 }
@@ -94,17 +88,17 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
 [data-testid="stSidebar"] h1,
 [data-testid="stSidebar"] h2,
 [data-testid="stSidebar"] h3 { color: #14171f !important; }
-[data-testid="stProgressBar"] > div { background-color: #0f766e !important; }
+[data-testid="stProgressBar"] > div { background-color: #0f9b63 !important; }
 details {
-    background-color: #f7f8fa !important;
+    background-color: #f8f9fa !important;
     border-radius: 8px;
-    border: 1px solid #c7cedb !important;
+    border: 1px solid #e0e0e0 !important;
 }
 summary { color: #45495c !important; }
-hr { border-color: #c7cedb !important; }
+hr { border-color: #e0e0e0 !important; }
 ::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #f1f3f7; }
-::-webkit-scrollbar-thumb { background: #c7cedb; border-radius: 4px; }
+::-webkit-scrollbar-track { background: #f0f0f0; }
+::-webkit-scrollbar-thumb { background: #cccccc; border-radius: 4px; }
 
 /* ── Tab styling ────────────────────────────────── */
 [data-testid="stTabs"] button {
@@ -117,13 +111,13 @@ hr { border-color: #c7cedb !important; }
 }
 [data-testid="stTabs"] button[aria-selected="true"] {
     color: #14171f !important;
-    border-bottom-color: #0f766e !important;
+    border-bottom-color: #0f9b63 !important;
 }
 
 /* ── Prediction card styling ────────────────────── */
 .pred-card {
-    background: #f7f8fa;
-    border: 1px solid #c7cedb;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
     border-radius: 16px;
     padding: 28px 24px;
     text-align: center;
@@ -137,9 +131,9 @@ hr { border-color: #c7cedb !important; }
     height: 4px;
     border-radius: 16px 16px 0 0;
 }
-.pred-card.ts::before   { background: #1d4ed8; }
-.pred-card.tm::before   { background: #b45309; }
-.pred-card.tmts::before { background: #15803d; }
+.pred-card.ts::before   { background: #e73f1e; }
+.pred-card.tm::before   { background: #fb6c00; }
+.pred-card.tmts::before { background: #0f9b63; }
 .pred-label {
     font-size: 0.85rem;
     font-weight: 600;
@@ -147,9 +141,9 @@ hr { border-color: #c7cedb !important; }
     letter-spacing: 0.08em;
     margin-bottom: 8px;
 }
-.pred-card.ts .pred-label   { color: #1d4ed8; }
-.pred-card.tm .pred-label   { color: #b45309; }
-.pred-card.tmts .pred-label { color: #15803d; }
+.pred-card.ts .pred-label   { color: #e73f1e; }
+.pred-card.tm .pred-label   { color: #fb6c00; }
+.pred-card.tmts .pred-label { color: #0f9b63; }
 .pred-value {
     font-size: 2.4rem;
     font-weight: 700;
@@ -173,11 +167,11 @@ hr { border-color: #c7cedb !important; }
     margin-top: 8px;
 }
 .consistency-badge.good {
-    background: #15803d;
+    background: #0f9b63;
     color: #ffffff;
 }
 .consistency-badge.warn {
-    background: #b45309;
+    background: #fb6c00;
     color: #ffffff;
 }
 
@@ -190,13 +184,13 @@ hr { border-color: #c7cedb !important; }
     color: #45495c;
     margin-bottom: 12px;
     padding-bottom: 6px;
-    border-bottom: 1px solid #c7cedb;
+    border-bottom: 1px solid #e0e0e0;
 }
 
 /* ── Summary block ──────────────────────────────── */
 .summary-block {
-    background: #f7f8fa;
-    border: 1px solid #c7cedb;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
     border-radius: 12px;
     padding: 20px 24px;
     font-family: 'Inter', monospace;
@@ -216,14 +210,14 @@ hr { border-color: #c7cedb !important; }
     font-weight: 600;
     margin-top: 8px;
 }
-.conf-badge.high   { background: #15803d; color: #ffffff; }
-.conf-badge.medium { background: #b45309; color: #ffffff; }
-.conf-badge.low    { background: #b91c1c; color: #ffffff; }
+.conf-badge.high   { background: #0f9b63; color: #ffffff; }
+.conf-badge.medium { background: #fb6c00; color: #ffffff; }
+.conf-badge.low    { background: #e73f1e; color: #ffffff; }
 
 /* ── Warning chips ──────────────────────────────── */
 .warn-chip {
-    background: #fdf1e0;
-    border: 1px solid #b45309;
+    background: #fff3e0;
+    border: 1px solid #fb6c00;
     border-radius: 8px;
     padding: 8px 14px;
     font-size: 0.82rem;
@@ -238,8 +232,8 @@ hr { border-color: #c7cedb !important; }
     gap: 8px;
     align-items: center;
     padding: 8px 14px;
-    background: #f7f8fa;
-    border: 1px solid #c7cedb;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
     border-radius: 8px;
     margin-bottom: 6px;
     font-size: 0.83rem;
