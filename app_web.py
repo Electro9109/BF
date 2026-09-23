@@ -57,70 +57,105 @@ TOP_N = TOP_K
 
 # ---------- CSS ---------------------------------------------------------------
 # Custom color palette (Color Hunt: e73f1e, fb6c00, 0f9b63, 7ffdd9)
+# Coherent design system with consistent palette application, spacing, and border-radius.
 # Static, high-contrast design. No transition/transform rules.
 # Every text/background pair meets WCAG AA (4.5:1 for normal text, 3:1 for large text).
 st.markdown("""
 <style>
+/* Base colors from palette */
+:root {
+    --palette-red: #e73f1e;
+    --palette-orange: #fb6c00;
+    --palette-green: #0f9b63;
+    --palette-light-green: #7ffdd9;
+    --text-primary: #14171f;
+    --text-secondary: #45495c;
+    --text-tertiary: #3d4352;
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-tertiary: #f0f0f0;
+    --border-color: #e0e0e0;
+    --border-light: #cccccc;
+    --palette-red-dark: #c33218;
+    --palette-orange-dark: #b34d00;
+    --palette-green-dark: #0a7a4e;
+}
+
+/* Global base styles */
 html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
-    background-color: #ffffff !important;
-    color: #14171f !important;
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
+
+/* Sidebar */
 [data-testid="stSidebar"] {
-    background-color: #f8f9fa !important;
-    border-right: 1px solid #e0e0e0;
+    background-color: var(--bg-secondary) !important;
+    border-right: 1px solid var(--border-color);
     padding: 1rem !important;
 }
 [data-testid="stSidebar"] > div {
     padding: 0.5rem !important;
 }
+[data-testid="stSidebar"] * { color: var(--text-secondary) !important; }
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 { color: var(--text-primary) !important; }
+
+/* Chat */
 [data-testid="stChatMessage"] {
-    background-color: #f0f0f0 !important;
+    background-color: var(--bg-tertiary) !important;
     border-radius: 12px;
     padding: 14px 18px !important;
     margin-bottom: 8px;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--border-color);
 }
 [data-testid="stChatInput"] textarea {
-    background-color: #ffffff !important;
-    color: #14171f !important;
-    border: 1px solid #cccccc !important;
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-light) !important;
     border-radius: 12px !important;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
-[data-testid="stSidebar"] * { color: #45495c !important; }
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 { color: #14171f !important; }
-[data-testid="stProgressBar"] > div { background-color: #0f9b63 !important; }
+
+/* Progress bar */
+[data-testid="stProgressBar"] > div { background-color: var(--palette-green) !important; }
+
+/* Details/expanders */
 details {
-    background-color: #f8f9fa !important;
-    border-radius: 8px;
-    border: 1px solid #e0e0e0 !important;
+    background-color: var(--bg-secondary) !important;
+    border-radius: 12px;
+    border: 1px solid var(--border-color) !important;
     margin-bottom: 1rem !important;
 }
-summary { color: #45495c !important; }
-hr { border-color: #e0e0e0 !important; }
+summary { color: var(--text-secondary) !important; }
+hr { border-color: var(--border-color) !important; }
+
+/* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #f0f0f0; }
-::-webkit-scrollbar-thumb { background: #cccccc; border-radius: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-tertiary); }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 4px; }
+
+/* Tabs */
 [data-testid="stTabs"] button {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
     font-weight: 500;
     font-size: 1rem;
-    color: #45495c !important;
+    color: var(--text-secondary) !important;
     border-bottom: 2px solid transparent;
     padding: 10px 20px;
 }
 [data-testid="stTabs"] button[aria-selected="true"] {
-    color: #14171f !important;
-    border-bottom-color: #0f9b63 !important;
+    color: var(--text-primary) !important;
+    border-bottom-color: var(--palette-green) !important;
 }
+
+/* Prediction cards */
 .pred-card {
-    background: #f8f9fa;
-    border: 1px solid #e0e0e0;
-    border-radius: 16px;
-    padding: 28px 24px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 24px;
     text-align: center;
     position: relative;
     overflow: hidden;
@@ -131,11 +166,11 @@ hr { border-color: #e0e0e0 !important; }
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 4px;
-    border-radius: 16px 16px 0 0;
+    border-radius: 12px 12px 0 0;
 }
-.pred-card.ts::before   { background: #e73f1e; }
-.pred-card.tm::before   { background: #fb6c00; }
-.pred-card.tmts::before { background: #0f9b63; }
+.pred-card.ts::before   { background: var(--palette-red); }
+.pred-card.tm::before   { background: var(--palette-orange); }
+.pred-card.tmts::before { background: var(--palette-green); }
 .pred-label {
     font-size: 0.85rem;
     font-weight: 600;
@@ -143,21 +178,23 @@ hr { border-color: #e0e0e0 !important; }
     letter-spacing: 0.08em;
     margin-bottom: 8px;
 }
-.pred-card.ts .pred-label   { color: #e73f1e; }
-.pred-card.tm .pred-label   { color: #fb6c00; }
-.pred-card.tmts .pred-label { color: #0f9b63; }
+.pred-card.ts .pred-label   { color: var(--palette-red-dark); }
+.pred-card.tm .pred-label   { color: var(--palette-orange-dark); }
+.pred-card.tmts .pred-label { color: var(--palette-green-dark); }
 .pred-value {
     font-size: 2.4rem;
     font-weight: 700;
-    color: #14171f;
+    color: var(--text-primary);
     line-height: 1.1;
 }
 .pred-unit {
     font-size: 0.9rem;
     font-weight: 400;
-    color: #45495c;
+    color: var(--text-secondary);
     margin-left: 4px;
 }
+
+/* Consistency badges */
 .consistency-badge {
     display: inline-block;
     padding: 6px 14px;
@@ -167,34 +204,40 @@ hr { border-color: #e0e0e0 !important; }
     margin-top: 8px;
 }
 .consistency-badge.good {
-    background: #0f9b63;
+    background: var(--palette-green-dark);
     color: #ffffff;
 }
 .consistency-badge.warn {
-    background: #fb6c00;
+    background: var(--palette-orange-dark);
     color: #ffffff;
 }
+
+/* Section headers */
 .section-header {
     font-size: 0.78rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: #45495c;
+    color: var(--text-secondary);
     margin-bottom: 12px;
     padding-bottom: 6px;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--border-color);
 }
+
+/* Summary blocks */
 .summary-block {
-    background: #f8f9fa;
-    border: 1px solid #e0e0e0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 20px 24px;
     font-family: 'Inter', monospace;
     font-size: 0.88rem;
     line-height: 1.7;
-    color: #33374a;
+    color: var(--text-secondary);
     white-space: pre-wrap;
 }
+
+/* Confidence badges */
 .conf-badge {
     display: inline-flex;
     align-items: center;
@@ -205,32 +248,40 @@ hr { border-color: #e0e0e0 !important; }
     font-weight: 600;
     margin-top: 8px;
 }
-.conf-badge.high   { background: #0f9b63; color: #ffffff; }
-.conf-badge.medium { background: #fb6c00; color: #ffffff; }
-.conf-badge.low    { background: #e73f1e; color: #ffffff; }
+.conf-badge.high   { background: var(--palette-green-dark); color: #ffffff; }
+.conf-badge.medium { background: var(--palette-orange-dark); color: #ffffff; }
+.conf-badge.low    { background: var(--palette-red-dark); color: #ffffff; }
+
+/* Warning chips - using palette colors */
 .warn-chip {
-    background: #fff3e0;
-    border: 1px solid #fb6c00;
-    border-radius: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--palette-orange-dark);
+    border-radius: 12px;
     padding: 8px 14px;
     font-size: 0.82rem;
-    color: #7c3d05;
+    color: var(--palette-orange-dark);
     margin-bottom: 6px;
 }
+
+/* History rows */
 .hist-row {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 1fr auto;
     gap: 8px;
     align-items: center;
     padding: 8px 14px;
-    background: #f8f9fa;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
     margin-bottom: 6px;
     font-size: 0.83rem;
-    color: #33374a;
+    color: var(--text-secondary);
 }
-.hist-row .val { color: #14171f; font-weight: 600; }
+.hist-row .val { color: var(--text-primary); font-weight: 600; }
+.hist-row .conf-high { color: var(--palette-green-dark); font-weight: 600; }
+.hist-row .conf-medium { color: var(--palette-orange-dark); font-weight: 600; }
+.hist-row .conf-low { color: var(--palette-red-dark); font-weight: 600; }
+.hist-row .conf-unknown { color: var(--text-tertiary); font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -534,7 +585,7 @@ def render_relevance(matches, placeholder):
 
             st.markdown(
                 f"**[{i}] {source}**&nbsp;&nbsp;"
-                f"<span style='color:#8892a8'>|&nbsp;&nbsp;"
+                f"<span style='color:#3d4352'>|&nbsp;&nbsp;"
                 f"<code style='font-size:0.78em'>{section}</code>"
                 f"&nbsp;&nbsp;|&nbsp;&nbsp;{score:.4f}</span>",
                 unsafe_allow_html=True,
@@ -745,7 +796,7 @@ with tab_pred:
                 st.markdown("")
                 st.markdown(
                     "<div style='text-align:center; padding: 60px 20px; "
-                    "color: #4a506a;'>"
+                    "color: #3d4352;'>"
                     "<p style='font-size: 3rem; margin-bottom: 12px;'>🧪</p>"
                     "<p style='font-size: 1.1rem; font-weight: 500;'>"
                     "Enter chemistry parameters and click Predict</p>"
@@ -907,16 +958,16 @@ with tab_pred:
     if hist:
         st.markdown("")
         with st.expander(f"📋 Prediction History  ({len(hist)} runs)", expanded=False):
-            conf_colors = {"high": "#34d399", "medium": "#fbbf24", "low": "#f87171"}
             for h in hist:
-                color = conf_colors.get(h["conf"], "#8892a8")
+                conf_class_map = {"high": "conf-high", "medium": "conf-medium", "low": "conf-low"}
+                conf_class = conf_class_map.get(h["conf"], "conf-unknown")
                 st.markdown(
                     f'<div class="hist-row">'
                     f'<span>{h["ts_stamp"]}</span>'
                     f'<span>Ts=<span class="val">{h["ts_val"]}°C</span></span>'
                     f'<span>Tm=<span class="val">{h["tm_val"]}°C</span></span>'
                     f'<span>Tm-Ts=<span class="val">{h["tmt_val"]}°C</span></span>'
-                    f'<span style="color:{color};font-weight:600;">{h["conf"].upper()}</span>'
+                    f'<span class="{conf_class}">{h["conf"].upper()}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )

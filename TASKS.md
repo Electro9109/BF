@@ -1851,9 +1851,25 @@ tests, 0 regressions).
 
 ---
 
+## Task 25 — Overhaul app_web.py visual design for coherent color scheme: COMPLETE, verified
+
+**Status: COMPLETE.** Audited CSS in app_web.py and identified integration problems: 4th palette color (#7ffdd9) never used, prediction history used non-palette colors (#34d399, #fbbf24, #f87171), warn chip used non-palette colors (#fff3e0, #7c3d05), 9 different gray shades used inconsistently, border radius varied (8px, 12px, 16px, 20px), and spacing was inconsistent. No styles.css file existed — all CSS was inline.
+
+**Implementation:** Created a coherent design system using CSS variables with the existing palette (e73f1e, fb6c00, 0f9b63, 7ffdd9) plus WCAG-compliant dark variants (c33218, b34d00, 0a7a4e) for text-on-light-background scenarios. Applied consistent palette across all UI surfaces: sidebar, chat messages, tabs, prediction cards, badges (confidence/consistency), quality/finding tables, cleaner section, buttons, and replaced all Streamlit default element styling leaks. Standardized border-radius to 12px (cards, chat, input) and 20px (badges), and consolidated gray colors to 3 levels (primary #14171f, secondary #45495c, tertiary #3d4352).
+
+**Contrast verification:** Programmatically computed WCAG contrast ratios for all 26 text/background color pairs. All pairs pass AA with margin (lowest ratio: 5.01:1 against 4.5:1 minimum for normal text). Confirmed no transition/transform/:hover CSS rules were reintroduced (only text-transform: uppercase remains, which is styling, not animation).
+
+**Test verification:** Full test suite green (166 passed, 0 failed, 0 skipped) — identical to baseline, confirming no behavioral/logic changes occurred. tests/test_app_web_data_shapes.py and tests/test_app_web_cleaning_adoption.py both pass, confirming app_web.py source text assertions remain valid.
+
+**Design decisions:** Kept existing Color Hunt palette rather than introducing new colors, as the user's concern was inconsistent application rather than palette choice. Added dark variants for palette colors specifically to meet WCAG AA on light backgrounds (the original palette colors failed contrast on #f8f9fa background). The 4th palette color (#7ffdd9) remains unused as planned — no suitable use case emerged during the coherent application phase; future work can introduce it where semantically appropriate.
+
+Full suite: 166 passed, 0 skipped, 0 failed (no regressions from Task 24 baseline).
+
+---
+
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(Tasks 1-17, 18-24 are complete. No upcoming tasks pending — the
+*(Tasks 1-17, 18-25 are complete. No upcoming tasks pending — the
 canonical-representation/index-creator foundation noted in Task 22 is
 future work, not yet specced as a numbered task.)*
 
