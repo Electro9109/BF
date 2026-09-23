@@ -57,35 +57,36 @@ TOP_N = TOP_K
 
 # ---------- CSS ---------------------------------------------------------------
 # Custom color palette (Color Hunt: e73f1e, fb6c00, 0f9b63, 7ffdd9)
-# Coherent design system with consistent palette application, spacing, and border-radius.
+# Dark theme with coherent design system, consistent palette application, spacing, and border-radius.
 # Static, high-contrast design. No transition/transform rules.
 # Every text/background pair meets WCAG AA (4.5:1 for normal text, 3:1 for large text).
+# Fully offline - no external font imports.
 st.markdown("""
 <style>
-/* Base colors from palette */
+/* Base colors from palette - dark theme */
 :root {
     --palette-red: #e73f1e;
     --palette-orange: #fb6c00;
     --palette-green: #0f9b63;
     --palette-light-green: #7ffdd9;
-    --text-primary: #14171f;
-    --text-secondary: #45495c;
-    --text-tertiary: #3d4352;
-    --bg-primary: #ffffff;
-    --bg-secondary: #f8f9fa;
-    --bg-tertiary: #f0f0f0;
-    --border-color: #e0e0e0;
-    --border-light: #cccccc;
-    --palette-red-dark: #c33218;
-    --palette-orange-dark: #b34d00;
-    --palette-green-dark: #0a7a4e;
+    --text-primary: #f0f0f0;
+    --text-secondary: #b8c5d0;
+    --text-tertiary: #8a9bb0;
+    --bg-primary: #0f1117;
+    --bg-secondary: #1a1d26;
+    --bg-tertiary: #242835;
+    --border-color: #2d3240;
+    --border-light: #3a4050;
+    --palette-red-light: #ff6b4a;
+    --palette-orange-light: #ff9d4a;
+    --palette-green-light: #2dd494;
 }
 
 /* Global base styles */
 html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     background-color: var(--bg-primary) !important;
     color: var(--text-primary) !important;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
 
 /* Sidebar */
@@ -111,11 +112,11 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     border: 1px solid var(--border-color);
 }
 [data-testid="stChatInput"] textarea {
-    background-color: var(--bg-primary) !important;
+    background-color: var(--bg-secondary) !important;
     color: var(--text-primary) !important;
     border: 1px solid var(--border-light) !important;
     border-radius: 12px !important;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
 
 /* Progress bar */
@@ -138,7 +139,7 @@ hr { border-color: var(--border-color) !important; }
 
 /* Tabs */
 [data-testid="stTabs"] button {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
     font-weight: 500;
     font-size: 1rem;
     color: var(--text-secondary) !important;
@@ -159,7 +160,7 @@ hr { border-color: var(--border-color) !important; }
     text-align: center;
     position: relative;
     overflow: hidden;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 .pred-card::before {
     content: '';
@@ -178,9 +179,9 @@ hr { border-color: var(--border-color) !important; }
     letter-spacing: 0.08em;
     margin-bottom: 8px;
 }
-.pred-card.ts .pred-label   { color: var(--palette-red-dark); }
-.pred-card.tm .pred-label   { color: var(--palette-orange-dark); }
-.pred-card.tmts .pred-label { color: var(--palette-green-dark); }
+.pred-card.ts .pred-label   { color: var(--palette-red-light); }
+.pred-card.tm .pred-label   { color: var(--palette-orange-light); }
+.pred-card.tmts .pred-label { color: var(--palette-green-light); }
 .pred-value {
     font-size: 2.4rem;
     font-weight: 700;
@@ -204,12 +205,12 @@ hr { border-color: var(--border-color) !important; }
     margin-top: 8px;
 }
 .consistency-badge.good {
-    background: var(--palette-green-dark);
-    color: #ffffff;
+    background: var(--palette-green-light);
+    color: #0f1117;
 }
 .consistency-badge.warn {
-    background: var(--palette-orange-dark);
-    color: #ffffff;
+    background: var(--palette-orange-light);
+    color: #0f1117;
 }
 
 /* Section headers */
@@ -230,7 +231,7 @@ hr { border-color: var(--border-color) !important; }
     border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 20px 24px;
-    font-family: 'Inter', monospace;
+    font-family: monospace;
     font-size: 0.88rem;
     line-height: 1.7;
     color: var(--text-secondary);
@@ -248,18 +249,18 @@ hr { border-color: var(--border-color) !important; }
     font-weight: 600;
     margin-top: 8px;
 }
-.conf-badge.high   { background: var(--palette-green-dark); color: #ffffff; }
-.conf-badge.medium { background: var(--palette-orange-dark); color: #ffffff; }
-.conf-badge.low    { background: var(--palette-red-dark); color: #ffffff; }
+.conf-badge.high   { background: var(--palette-green-light); color: #0f1117; }
+.conf-badge.medium { background: var(--palette-orange-light); color: #0f1117; }
+.conf-badge.low    { background: var(--palette-red-light); color: #0f1117; }
 
 /* Warning chips - using palette colors */
 .warn-chip {
     background: var(--bg-secondary);
-    border: 1px solid var(--palette-orange-dark);
+    border: 1px solid var(--palette-orange);
     border-radius: 12px;
     padding: 8px 14px;
     font-size: 0.82rem;
-    color: var(--palette-orange-dark);
+    color: var(--palette-orange-light);
     margin-bottom: 6px;
 }
 
@@ -278,9 +279,9 @@ hr { border-color: var(--border-color) !important; }
     color: var(--text-secondary);
 }
 .hist-row .val { color: var(--text-primary); font-weight: 600; }
-.hist-row .conf-high { color: var(--palette-green-dark); font-weight: 600; }
-.hist-row .conf-medium { color: var(--palette-orange-dark); font-weight: 600; }
-.hist-row .conf-low { color: var(--palette-red-dark); font-weight: 600; }
+.hist-row .conf-high { color: var(--palette-green-light); font-weight: 600; }
+.hist-row .conf-medium { color: var(--palette-orange-light); font-weight: 600; }
+.hist-row .conf-low { color: var(--palette-red-light); font-weight: 600; }
 .hist-row .conf-unknown { color: var(--text-tertiary); font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
@@ -585,7 +586,7 @@ def render_relevance(matches, placeholder):
 
             st.markdown(
                 f"**[{i}] {source}**&nbsp;&nbsp;"
-                f"<span style='color:#3d4352'>|&nbsp;&nbsp;"
+                f"<span style='color:var(--text-tertiary)'>|&nbsp;&nbsp;"
                 f"<code style='font-size:0.78em'>{section}</code>"
                 f"&nbsp;&nbsp;|&nbsp;&nbsp;{score:.4f}</span>",
                 unsafe_allow_html=True,
@@ -594,7 +595,7 @@ def render_relevance(matches, placeholder):
 
             preview = chunk.content[:120].replace("\n", " ")
             st.markdown(
-                f"<small style='color:#6b7394'>{preview}…</small>",
+                f"<small style='color:var(--text-tertiary)'>{preview}…</small>",
                 unsafe_allow_html=True,
             )
             if i < len(matches):
@@ -796,7 +797,7 @@ with tab_pred:
                 st.markdown("")
                 st.markdown(
                     "<div style='text-align:center; padding: 60px 20px; "
-                    "color: #3d4352;'>"
+                    "color: var(--text-tertiary);'>"
                     "<p style='font-size: 3rem; margin-bottom: 12px;'>🧪</p>"
                     "<p style='font-size: 1.1rem; font-weight: 500;'>"
                     "Enter chemistry parameters and click Predict</p>"
