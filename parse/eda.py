@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 from pathlib import Path
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -109,6 +111,12 @@ class DataUnderstanding:
     """Profile structured tabular data without changing the input."""
 
     def __init__(self, source: SourceRef | None = None):
+        warnings.warn(
+            "DataUnderstanding is deprecated and will be removed in PARSE 2.0. "
+            "Use parse.analysis.AnalysisOrchestrator instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.source = source or SourceRef("in_memory_dataset", "user_input", label="DataFrame")
 
     @classmethod

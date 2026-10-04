@@ -76,7 +76,6 @@ def analyze_uploaded_dataset(
 ) -> AnalysisBundle:
     """Run complete structured, semantic, and optional task-relevance analysis."""
     frame, source = load_uploaded_dataset(filename, content)
-    request = AnalysisRequest(frame, source)
     return analyze_loaded_dataset(frame, source, objective, selected_attributes)
 
 

@@ -8,6 +8,4 @@ openpyxl>=3.1.0
 sentence-transformers>=2.2.0
 faiss-cpu>=1.7.4
 xgboost>=2.0.0
-PyPDF2>=3.0.0
-python-docx>=0.8.11
 pytest>=8.0.0

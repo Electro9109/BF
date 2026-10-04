@@ -24,8 +24,10 @@ import json
 import numpy as np
 import pandas as pd
 
-from parse.eda import DataUnderstanding
+from parse.analysis import AnalysisOrchestrator, AnalysisRequest
+from parse.core.contracts import SourceRef
 from parse.cleaning import DataCleaner
+from parse.explainer_adapter import eda_result_to_explainer_examples, cleaning_issues_to_explainer_examples
 
 
 def _synthetic_dataset() -> pd.DataFrame:
@@ -87,11 +89,13 @@ def _cleaning_issues_to_eval_examples(issues) -> list[dict]:
 
 
 def build_eval_set(frame: pd.DataFrame) -> list[dict]:
-    eda_result = DataUnderstanding().profile(frame)
+    source = SourceRef("eval_synthetic", "user_input", label="SyntheticEvalFrame")
+    request = AnalysisRequest(frame, source)
+    eda_result = AnalysisOrchestrator().analyze(request)
     issues, _proposals = DataCleaner().detect(frame, eda_result=eda_result)
 
-    examples = _eda_findings_to_eval_examples(eda_result)
-    examples += _cleaning_issues_to_eval_examples(issues)
+    examples = eda_result_to_explainer_examples(eda_result)
+    examples += cleaning_issues_to_explainer_examples(issues)
     return examples
 
 

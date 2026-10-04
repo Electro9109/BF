@@ -378,14 +378,14 @@ Infrastructure should not define the meaning of evidence, analysis, or synthesis
 |---|---|---|
 | `data.parser` | document processing | reusable mechanism with domain policy inputs |
 | `data.loader` | document processing and Chunk creation | candidate core mechanism |
-| `data.sinter_schemas` | structured Sinter records | Sinter domain module |
-| `data.experiments_loader` | structured-data ingestion/validation | mechanism plus Sinter schema |
+| `departments.blast_furnace.bf_experiment_schema` | structured Sinter records | Sinter domain module |
+| `departments.blast_furnace.experiments_loader` | structured-data ingestion/validation | mechanism plus Sinter schema |
 | `retrieval.embeddings` | embedding implementation | infrastructure |
 | `retrieval.faiss_index` | vector index implementation | infrastructure |
 | `retrieval.topic_filter` | candidate filtering mechanism | reusable mechanism plus domain vocabulary |
 | `retrieval.reranker` | ranking adjustment mechanism | reusable mechanism plus domain policy |
 | `retrieval.retriever` | retrieval orchestration | candidate core capability |
-| `ml.feature_processing` | Sinter processing and feature construction | Sinter domain analysis support |
+| `departments.blast_furnace.feature_processing` | Sinter processing and feature construction | Sinter domain analysis support |
 | `ml.condition_parser` | condition interpretation | Sinter domain processing |
 | `ml.predictor` | model-backed analysis | Sinter analysis implementation |
 | `ml.similarity` | historical comparison/applicability | Sinter analysis implementation |

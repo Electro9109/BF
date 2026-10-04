@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from parse.core.contracts import AnalysisResult, EvidenceRef, Issue, Provenance, SourceRef
+from parse.dtype_utils import is_text_like
 
 
 KNOWLEDGE_STATES = {"observed", "statistical", "inferred", "confirmed", "unknown", "conflicting"}
@@ -34,6 +35,16 @@ def _json_value(value: Any) -> Any:
     if isinstance(value, (list, tuple, np.ndarray)):
         return [_json_value(item) for item in value]
     return str(value)
+
+
+@dataclass(frozen=True)
+class NextAction:
+    action: str
+    applicable: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -260,6 +271,8 @@ class AnalysisOrchestrator:
             roles.append("candidate_identifier")
         if observed_type == "categorical" and 1 < unique <= min(20, max(2, len(non_null) // 5)):
             roles.append("candidate_grouping")
+        if observed_type == "numeric" and any(token in name_text for token in ("target", "label", "outcome", "result", "score", "temperature")):
+            roles.append("candidate_target")
         distribution = None
         domain: dict[str, Any] = {}
         if observed_type == "numeric" and len(non_null):
@@ -272,12 +285,19 @@ class AnalysisOrchestrator:
                 domain.update({"length_min": int(lengths.min()) if len(lengths) else None,
                                "length_max": int(lengths.max()) if len(lengths) else None,
                                "length_mean": float(lengths.mean()) if len(lengths) else None})
+        if is_text_like(series) and len(non_null):
+            num_parsed = pd.to_numeric(non_null, errors="coerce")
+            num_frac = float(num_parsed.notna().mean())
+            if 0 < num_frac < 1:
+                domain["numeric_parse_fraction"] = num_frac
         temporal = self._temporal_properties(series) if observed_type == "temporal" else {}
         quality = []
         if series.isna().any():
             quality.append("missingness")
         if unique == 0:
             quality.append("empty")
+        if "numeric_parse_fraction" in domain:
+            quality.append("mixed_values")
         return AttributeProfile(
             name=str(name), observed_type=observed_type, representation=representation,
             row_count=len(series), non_null_count=int(series.notna().sum()),
@@ -372,12 +392,44 @@ class AnalysisOrchestrator:
                 findings.append(Finding(f"empty:{attribute.name}", "quality", attribute.name,
                     "The attribute contains no observed values.", "non_null_count", evidence,
                     result={"count": 0}, knowledge_state="observed"))
+            if attribute.missing_rate >= 0.5:
+                findings.append(Finding(f"sparse:{attribute.name}", "quality", attribute.name,
+                    f"Column '{attribute.name}' is sparse with {attribute.missing_rate:.0%} missing values.",
+                    "missingness_rate", evidence,
+                    result={"missing_rate": attribute.missing_rate},
+                    knowledge_state="observed"))
+            if attribute.distribution and attribute.distribution.skewness is not None and abs(attribute.distribution.skewness) >= 1.0:
+                findings.append(Finding(f"skew:{attribute.name}", "shape", attribute.name,
+                    f"Column '{attribute.name}' is strongly skewed (skewness {attribute.distribution.skewness:.2f}).",
+                    "sample_skewness", evidence,
+                    result={"skewness": attribute.distribution.skewness},
+                    knowledge_state="statistical"))
+            if "numeric_parse_fraction" in attribute.value_domain:
+                npf = attribute.value_domain["numeric_parse_fraction"]
+                findings.append(Finding(f"mixed_values:{attribute.name}", "quality", attribute.name,
+                    f"Column '{attribute.name}' mixes numeric-like and non-numeric values ({npf:.0%} parse as numbers).",
+                    "numeric_parse_fraction", evidence,
+                    result={"numeric_parse_fraction": npf},
+                    limitations=("The non-numeric values require domain review before conversion.",),
+                    knowledge_state="observed"))
             if "candidate_identifier" in attribute.structural_roles:
                 findings.append(Finding(f"role:{attribute.name}", "structure", attribute.name,
                     "The attribute is a candidate identifier based on uniqueness and naming.",
                     "uniqueness_and_name_heuristic", evidence,
                     interpretation="Candidate identifier, not confirmed semantic meaning.",
                     knowledge_state="inferred", limitations=("Confirm with dataset context.",)))
+            if "candidate_grouping" in attribute.structural_roles:
+                findings.append(Finding(f"group:{attribute.name}", "structure", attribute.name,
+                    f"Column '{attribute.name}' may define groups for stratified analysis.",
+                    "cardinality_heuristic", evidence,
+                    interpretation="Grouping candidacy is inferred from low cardinality; confirm its meaning.",
+                    knowledge_state="inferred", limitations=("Grouping candidacy is inferred from low cardinality; confirm its meaning.",)))
+            if "candidate_target" in attribute.structural_roles:
+                findings.append(Finding(f"target:{attribute.name}", "structure", attribute.name,
+                    f"Column '{attribute.name}' may be a target or outcome variable.",
+                    "name_heuristic", evidence,
+                    interpretation="Target candidacy is inferred from name/type and is not a causal claim.",
+                    knowledge_state="inferred", limitations=("Target candidacy is inferred from name/type and is not a causal claim.",)))
         return findings
 
     def _relationship_findings(self, frame: pd.DataFrame, attributes: list[AttributeProfile], source: SourceRef) -> list[Finding]:
@@ -421,6 +473,16 @@ class AnalysisOrchestrator:
                         "selection_rationale": selection.rationale},
                         assumptions=selection.assumptions,
                         limitations=("This is descriptive and does not establish causation.",)))
+        for cat_attr in categorical:
+            for num_attr in numeric:
+                grouped = frame.groupby(cat_attr, dropna=False)[num_attr].mean().dropna()
+                if len(grouped) >= 2 and grouped.max() != grouped.min():
+                    spread = float(grouped.max() - grouped.min())
+                    findings.append(self._finding(source, f"group_difference:{cat_attr}:{num_attr}", "relationship", (cat_attr, num_attr),
+                        f"Mean '{num_attr}' differs across '{cat_attr}' groups (spread {spread:.2f}).",
+                        "group_mean_spread", {"category": cat_attr, "numeric": num_attr, "mean_spread": spread},
+                        assumptions=("Observations are grouped by categorical levels.",),
+                        limitations=("Group differences are descriptive and do not establish causation.",)))
         return findings
 
     def _temporal_findings(self, attributes: list[AttributeProfile], source: SourceRef) -> list[Finding]:
@@ -454,3 +516,21 @@ class DatasetAnalysisAnalyzer:
             provenance=result.provenance,
             issues=[Issue("empty_dataset", "error", "The dataset has no rows.", source=source)] if not len(inputs[0]) else [],
         )
+
+
+def generate_next_actions(eda_result: EDAResult) -> list[NextAction]:
+    """Generate workflow suggestions grounded in the EDAResult profile.
+
+    Separates workflow recommendations from raw statistical observations.
+    """
+    numeric_count = sum(a.observed_type == "numeric" for a in eda_result.attributes)
+    text_count = sum(a.observed_type in {"text", "categorical"} for a in eda_result.attributes)
+    quality_issues = any(f.category == "quality" for f in eda_result.findings)
+    target_available = any("candidate_target" in a.structural_roles for a in eda_result.attributes)
+    return [
+        NextAction("clean_prepare", quality_issues, "Quality findings exist." if quality_issues else "No immediate quality issue was detected."),
+        NextAction("analyse", numeric_count >= 1, "At least one numeric variable is available." if numeric_count else "No numeric variable was detected."),
+        NextAction("explore_retrieve", text_count >= 1, "Categorical or text information is available." if text_count else "No text-like variable was detected."),
+        NextAction("build_prediction", target_available and numeric_count >= 2, "A candidate numeric target and predictors exist." if target_available and numeric_count >= 2 else "No sufficiently supported numeric target/predictor set was detected."),
+        NextAction("generate_report", True, "A structured profile is available for reporting."),
+    ]

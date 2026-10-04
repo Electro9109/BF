@@ -28,7 +28,7 @@ the app actually builds. It writes:
 |---|---|
 | `training_data.npz` | `X` (feature matrix), plus `y_Ts`, `y_Tm`, `y_Tm_Ts` (targets) |
 | `feature_names.json` | ordered column names for `X`, and the list of target names |
-| `scalers.pkl` | fitted `StandardScaler` objects (`chemistry`, `atmosphere`, `burden`, `interaction`) — needed at prediction time, not training time |
+| `scalers.pkl` | fitted `RangeScaler` objects (`chemistry`, `atmosphere`, `burden`, `interaction`) — needed at prediction time, not training time |
 
 Upload `training_data.npz` and `feature_names.json` to Kaggle (or
 wherever training happens). `scalers.pkl` is not needed for training —

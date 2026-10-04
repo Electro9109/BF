@@ -46,7 +46,7 @@ Recorded after Phase 1 completion on 2026-09-07.
 ## Increment 3: data-layer cleanup
 
 - Generic document contracts remain in `data/schemas.py`.
-- Sinter experiment contracts and CSV mappings are isolated in `data/sinter_schemas.py`.
+- Sinter experiment contracts and CSV mappings are in `departments/blast_furnace/bf_experiment_schema.py`.
 - Document loading supports explicit strict-mode failures for unreadable input.
 - Historical experiment validation reports malformed or incomplete values while retaining source rows.
 - Existing `Tm-Ts = Tm - Ts` repair behavior is preserved.
@@ -58,7 +58,7 @@ Recorded after Phase 1 completion on 2026-09-07.
 - Repository and storage paths remain in `config/paths.py`.
 - Generic retrieval mechanics remain in `config/retrieval.py`.
 - BF/Sinter topic vocabulary and section policy are in `config/retrieval_domain.py`.
-- Sinter ML features and targets are in `config/sinter.py`.
+- Sinter ML features and targets are in `departments/blast_furnace/config.py`.
 - Configuration boundaries are covered by `tests/test_config.py`.
 
 ## Active entry points

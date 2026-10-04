@@ -150,7 +150,7 @@ rather than ranges derived from the training data. This means:
 - A "T Fe %" of 60 always normalizes to the same value, regardless of what range
   happens to appear in the current dataset — important since the ~132-row dataset
   doesn't cover the full practical range of any feature.
-- Ranges are defined once in `ml/feature_processing.py` as `CHEM_RANGES`,
+- Ranges are defined once in `departments/blast_furnace/feature_processing.py` as `CHEM_RANGES`,
   `ATM_RANGES`, `BURDEN_RANGES`, and `INTERACTION_RANGES`, and applied via a
   lightweight `RangeScaler` (min-max scaling: `(x - lo) / (hi - lo)`).
 - This replaced the previous `StandardScaler` (z-score) approach. For tree-based
@@ -163,7 +163,7 @@ rather than ranges derived from the training data. This means:
   (see below) if you want out-of-range inputs flagged to the user.
 
 If you add new features or change a chemistry/atmosphere/burden range, update the
-relevant `*_RANGES` dict in `ml/feature_processing.py` and **retrain**
+relevant `*_RANGES` dict in `departments/blast_furnace/feature_processing.py` and **retrain**
 (`python -m ml.train`) — old `.pkl` files in `MLModels/` are not compatible with a
 changed feature space.
 

@@ -367,30 +367,50 @@ def _flatten_for_display(rows: list[dict]) -> list[dict]:
 
 
 def _simplify_attribute_row(row: dict) -> dict:
-    """Simplify a ColumnProfile row for display.
+    """Simplify an AttributeProfile or ColumnProfile row for display.
 
     Shows: name, type, key stats (missing%, unique count), and summary.
     Full detail available via expander.
     """
+    col_type = row.get("observed_type") or row.get("inferred_type") or row.get("type", "N/A")
+    missing_pct = row.get("missing_rate", row.get("missing_fraction", 0))
+    summary_text = ""
+    if "summary" in row and row["summary"]:
+        summary_text = str(row["summary"])
+    elif "distribution" in row and isinstance(row["distribution"], dict):
+        dist = row["distribution"]
+        mean_val = dist.get("mean")
+        min_val = dist.get("minimum")
+        max_val = dist.get("maximum")
+        if mean_val is not None and min_val is not None and max_val is not None:
+            summary_text = f"mean={mean_val:.2f}, range=[{min_val:.2f}, {max_val:.2f}]"
+    elif "value_domain" in row and isinstance(row["value_domain"], dict):
+        freqs = row["value_domain"].get("frequencies")
+        if freqs and isinstance(freqs, dict):
+            top_items = [f"{k} ({v})" for k, v in list(freqs.items())[:3]]
+            summary_text = "top: " + ", ".join(top_items)
+
     return {
-        "Column": row["name"],
-        "Type": row["inferred_type"],
-        "Missing %": f"{row['missing_fraction']:.1%}",
-        "Unique": row["unique_count"],
-        "Summary": str(row.get("summary", ""))[:100] + "..." if len(str(row.get("summary", ""))) > 100 else str(row.get("summary", "")),
+        "Column": row.get("name", "N/A"),
+        "Type": col_type,
+        "Missing %": f"{float(missing_pct):.1%}",
+        "Unique": row.get("unique_count", 0),
+        "Summary": str(summary_text)[:100] + "..." if len(str(summary_text)) > 100 else str(summary_text),
     }
 
 
 def _simplify_finding_row(row: dict) -> dict:
-    """Simplify an EDAFinding row for display.
+    """Simplify a Finding or EDAFinding row for display.
 
-    Shows: kind, message (plain-language), evidence count.
+    Shows: category/kind, observation/message (plain-language), evidence count.
     Full detail available via expander.
     """
     evidence_count = len(row.get("evidence", [])) if isinstance(row.get("evidence"), list) else 0
+    finding_type = row.get("category") or row.get("kind", "N/A")
+    finding_msg = row.get("observation") or row.get("message", "N/A")
     return {
-        "Type": row["kind"],
-        "Finding": row["message"],
+        "Type": finding_type,
+        "Finding": finding_msg,
         "Evidence": f"{evidence_count} ref(s)",
     }
 
@@ -404,10 +424,10 @@ def _simplify_semantic_candidate_row(row: dict) -> dict:
     confidence = row.get("confidence")
     conf_str = f"{confidence:.0%}" if confidence is not None else "N/A"
     return {
-        "Attribute": row["attribute"],
-        "Meaning": row["candidate_meaning"],
+        "Attribute": row.get("attribute", "N/A"),
+        "Meaning": row.get("candidate_meaning", "N/A"),
         "Confidence": conf_str,
-        "State": row["knowledge_state"],
+        "State": row.get("knowledge_state", "N/A"),
     }
 
 

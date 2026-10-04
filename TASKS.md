@@ -1742,6 +1742,12 @@ task goes here, not into the current task's diff.)*
   `pipeline/hybrid_pipeline.py` — zero direct test coverage, RAG-side,
   lower priority than Task 19's in-scope gaps. Candidate for a future
   task once RAG-side work is otherwise being touched.
+- `retrieval/retriever.py`: candidate subset search currently re-encodes texts on every query rather than slicing the precomputed FAISS/embedding matrix. Optimize to slice `self.embeddings` by index.
+- `llm/loader.py`: top-level import-time `os.environ` mutation. Move into a dedicated initialization helper so importing does not alter ambient environment variables.
+- `ml/` decoupling: `ml/train.py`, `ml/predictor.py`, `ml/similarity.py` import `departments.blast_furnace` directly. Refactor to inject the `Department` protocol.
+- `ml/import_trained_model.py`: uses `pickle.load` for externally trained models. Plan migration to safe format (e.g., `skops` or `onnx`).
+- `ml/predictor.py`: hardcoded confidence-distance thresholds (`1.05`, `1.82`) are empirical BF metrics. Move to department config.
+- `app_web.py`: monolithic structure (1,288 lines). Decompose into modular Streamlit components when transitioning to service architecture.
 
 ---
 
@@ -1867,11 +1873,36 @@ Full suite: 166 passed, 0 skipped, 0 failed (no regressions from Task 24 baselin
 
 ---
 
+## Task 26 — Repository Audit, Safe Defect Fixes, Canonical EDA Unification & Tooling Recommendation: COMPLETE, verified
+
+**Status: COMPLETE.** Completed 4-phase audit, refactoring, and hardening program:
+1. **Phase 1 (Audit):** Produced comprehensive `AUDIT.md` cataloging legacy `parse/eda.py` vs modern `parse/analysis.py`, consumer maps, path drifts, dead dependencies, and extensibility barriers.
+2. **Phase 2 (Safe Fixes):**
+   - Fixed `app_web.py` Data Explorer attribute/finding simplifier rendering bugs where `"N/A"` and `"0.0%"` were displayed instead of real statistical profiles. Added regression test `tests/test_app_web_data_shapes.py`.
+   - Removed unused variable in `parse/eda_ui.py`.
+   - Removed dead dependencies `PyPDF2` and `python-docx` from `requirements.txt`.
+   - Corrected documentation path drifts across `README.md`, `BF_BASELINE.md`, `PARSE_ARCHITECTURE.md`, `KAGGLE_TRAINING.md`.
+   - Created guard test `tests/test_docs.py` to continuously protect against stale documentation references.
+   - Documented clean extension points in `docs/EXTENDING.md`.
+3. **Phase 3 (EDA Unification behind Approved Gate):**
+   - Ported missing legacy EDA capabilities to canonical `parse/analysis.py` (`skew`, `sparse`, `mixed_values`, `group_difference`, and `generate_next_actions`).
+   - Created `parse/explainer_adapter.py` providing backward-compatible translation to Explainer record schema `{"schema_version": "1.0", "finding_id", "source", "category", "kind", "message", "attributes", "limitations"}`.
+   - Migrated `eval/build_parse_eval_set.py` to use canonical `AnalysisOrchestrator` via `explainer_adapter`.
+   - Preserved planted finding IDs (`duplicate_rows`, `missing_measurement`, `outliers_measurement`, `skew_skewed_value`).
+   - Deprecated `parse/eda.py` with `DeprecationWarning` without deleting or breaking legacy caller paths.
+   - Pinned Explainer contract and fidelity checks in `tests/test_explainer_adapter.py`.
+4. **Phase 4 (Tooling Recommendations):**
+   - Produced `docs/TOOLING.md` analyzing quality tooling (Ruff, Mypy, CI), dependency management (`uv`/pip-tools lockfile, offline wheelhouse), storage evaluation (Parquet vs DuckDB at 130 rows), model serving (`skops`/ONNX, quantized local LLMs), UI architecture (Streamlit modularization vs FastAPI), and computational performance (Python vs Rust).
+
+Full suite: 171 passed, 0 failed, 12 warnings (clean, +5 new tests, 0 regressions from baseline).
+`python setup_check.py` passed with all OK checks.
+
+---
+
 ## Upcoming (not started — for context only, do not work on these yet)
 
-*(Tasks 1-17, 18-25 are complete. No upcoming tasks pending — the
-canonical-representation/index-creator foundation noted in Task 22 is
-future work, not yet specced as a numbered task.)*
+*(Tasks 1-26 are complete. The codebase is unified behind canonical AnalysisOrchestrator and safe to extend.)*
+
 
 
 

@@ -1,0 +1,244 @@
+[
+  {
+    "finding_id": "duplicate_rows",
+    "source": "eda",
+    "category": "quality",
+    "kind": "observation",
+    "message": "1 duplicate row(s) were detected.",
+    "attributes": {
+      "count": 1
+    },
+    "limitations": []
+  },
+  {
+    "finding_id": "missing_measurement",
+    "source": "eda",
+    "category": "quality",
+    "kind": "observation",
+    "message": "Column 'measurement' has 5 missing value(s).",
+    "attributes": {
+      "column": "measurement",
+      "missing_count": 5,
+      "missing_fraction": 0.08196721311475409
+    },
+    "limitations": []
+  },
+  {
+    "finding_id": "outliers_measurement",
+    "source": "eda",
+    "category": "statistical",
+    "kind": "observation",
+    "message": "Column 'measurement' contains 3 IQR-based statistical outlier(s).",
+    "attributes": {
+      "column": "measurement",
+      "count": 3
+    },
+    "limitations": [
+      "A statistical outlier is not automatically a data error."
+    ]
+  },
+  {
+    "finding_id": "skew_measurement",
+    "source": "eda",
+    "category": "statistical",
+    "kind": "observation",
+    "message": "Column 'measurement' is strongly skewed (skewness 1.20).",
+    "attributes": {
+      "column": "measurement",
+      "skewness": 1.2027965106231895
+    },
+    "limitations": []
+  },
+  {
+    "finding_id": "mixed_values_mixed_column",
+    "source": "eda",
+    "category": "quality",
+    "kind": "observation",
+    "message": "Column 'mixed_column' mixes numeric-like and non-numeric values (79% parse as numbers).",
+    "attributes": {
+      "column": "mixed_column",
+      "numeric_parse_fraction": 0.7868852459016393
+    },
+    "limitations": [
+      "The non-numeric values require domain review before conversion."
+    ]
+  },
+  {
+    "finding_id": "outliers_skewed_value",
+    "source": "eda",
+    "category": "statistical",
+    "kind": "observation",
+    "message": "Column 'skewed_value' contains 2 IQR-based statistical outlier(s).",
+    "attributes": {
+      "column": "skewed_value",
+      "count": 2
+    },
+    "limitations": [
+      "A statistical outlier is not automatically a data error."
+    ]
+  },
+  {
+    "finding_id": "skew_skewed_value",
+    "source": "eda",
+    "category": "statistical",
+    "kind": "observation",
+    "message": "Column 'skewed_value' is strongly skewed (skewness 2.21).",
+    "attributes": {
+      "column": "skewed_value",
+      "skewness": 2.2097815793650066
+    },
+    "limitations": []
+  },
+  {
+    "finding_id": "group_group_flag",
+    "source": "eda",
+    "category": "logical",
+    "kind": "interpretation",
+    "message": "Column 'group_flag' may define groups for stratified analysis.",
+    "attributes": {
+      "column": "group_flag"
+    },
+    "limitations": [
+      "Grouping candidacy is inferred from low cardinality; confirm its meaning."
+    ]
+  },
+  {
+    "finding_id": "group_difference_mixed_column_measurement",
+    "source": "eda",
+    "category": "relationship",
+    "kind": "observation",
+    "message": "Mean 'measurement' differs across 'mixed_column' groups (spread 469.47).",
+    "attributes": {
+      "category": "mixed_column",
+      "numeric": "measurement",
+      "mean_spread": 469.47159484159715
+    },
+    "limitations": [
+      "Group differences are descriptive and do not establish causation."
+    ]
+  },
+  {
+    "finding_id": "group_difference_mixed_column_skewed_value",
+    "source": "eda",
+    "category": "relationship",
+    "kind": "observation",
+    "message": "Mean 'skewed_value' differs across 'mixed_column' groups (spread 10.81).",
+    "attributes": {
+      "category": "mixed_column",
+      "numeric": "skewed_value",
+      "mean_spread": 10.80573632110291
+    },
+    "limitations": [
+      "Group differences are descriptive and do not establish causation."
+    ]
+  },
+  {
+    "finding_id": "group_difference_mixed_column_record_id",
+    "source": "eda",
+    "category": "relationship",
+    "kind": "observation",
+    "message": "Mean 'record_id' differs across 'mixed_column' groups (spread 58.00).",
+    "attributes": {
+      "category": "mixed_column",
+      "numeric": "record_id",
+      "mean_spread": 58.0
+    },
+    "limitations": [
+      "Group differences are descriptive and do not establish causation."
+    ]
+  },
+  {
+    "finding_id": "group_difference_group_flag_measurement",
+    "source": "eda",
+    "category": "relationship",
+    "kind": "observation",
+    "message": "Mean 'measurement' differs across 'group_flag' groups (spread 42.02).",
+    "attributes": {
+      "category": "group_flag",
+      "numeric": "measurement",
+      "mean_spread": 42.01709353897894
+    },
+    "limitations": [
+      "Group differences are descriptive and do not establish causation."
+    ]
+  },
+  {
+    "finding_id": "group_difference_group_flag_skewed_value",
+    "source": "eda",
+    "category": "relationship",
+    "kind": "observation",
+    "message": "Mean 'skewed_value' differs across 'group_flag' groups (spread 0.20).",
+    "attributes": {
+      "category": "group_flag",
+      "numeric": "skewed_value",
+      "mean_spread": 0.2040626185369021
+    },
+    "limitations": [
+      "Group differences are descriptive and do not establish causation."
+    ]
+  },
+  {
+    "finding_id": "group_difference_group_flag_record_id",
+    "source": "eda",
+    "category": "relationship",
+    "kind": "observation",
+    "message": "Mean 'record_id' differs across 'group_flag' groups (spread 4.22).",
+    "attributes": {
+      "category": "group_flag",
+      "numeric": "record_id",
+      "mean_spread": 4.223311546840961
+    },
+    "limitations": [
+      "Group differences are descriptive and do not establish causation."
+    ]
+  },
+  {
+    "finding_id": "duplicate_rows",
+    "source": "cleaning_issue",
+    "category": "duplicate_rows",
+    "kind": "observation",
+    "message": "1 duplicate row(s) can be reviewed.",
+    "attributes": {},
+    "limitations": []
+  },
+  {
+    "finding_id": "missing_measurement",
+    "source": "cleaning_issue",
+    "category": "missing_values",
+    "kind": "observation",
+    "message": "Column 'measurement' has 5 missing value(s).",
+    "attributes": {},
+    "limitations": []
+  },
+  {
+    "finding_id": "mixed_values_mixed_column",
+    "source": "cleaning_issue",
+    "category": "mixed_values",
+    "kind": "observation",
+    "message": "Column 'mixed_column' mixes numeric-like and non-numeric values.",
+    "attributes": {},
+    "limitations": []
+  },
+  {
+    "finding_id": "outliers_measurement",
+    "source": "cleaning_issue",
+    "category": "statistical_outliers",
+    "kind": "observation",
+    "message": "Column 'measurement' contains 3 IQR-based statistical outlier(s).",
+    "attributes": {},
+    "limitations": [
+      "A statistical outlier is not automatically a data error."
+    ]
+  },
+  {
+    "finding_id": "outliers_skewed_value",
+    "source": "cleaning_issue",
+    "category": "statistical_outliers",
+    "kind": "observation",
+    "message": "Column 'skewed_value' contains 2 IQR-based statistical outlier(s).",
+    "attributes": {},
+    "limitations": [
+      "A statistical outlier is not automatically a data error."
+    ]
+  }
+]

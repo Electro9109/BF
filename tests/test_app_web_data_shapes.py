@@ -65,3 +65,38 @@ def test_app_web_data_explorer_shape_contract():
 
     for finding in bundle.eda.findings:
         _ = finding.to_dict()
+
+
+def test_simplify_helpers_behavior_on_analysis_bundle():
+    """Ensure _simplify_attribute_row and _simplify_finding_row extract real values from AnalysisBundle."""
+    from app_web import _simplify_attribute_row, _simplify_finding_row
+
+    frame = pd.DataFrame({"num": [10.0, 20.0, None], "cat": ["X", "Y", "X"]})
+    source = SourceRef("test-src", "csv", "test.csv")
+    bundle = analyze_loaded_dataset(frame, source, None)
+
+    # 1. Attribute row simplification
+    attr_dicts = [attr.to_dict() for attr in bundle.eda.attributes]
+    simplified_attrs = [_simplify_attribute_row(d) for d in attr_dicts]
+    assert len(simplified_attrs) == 2
+
+    num_attr = next(a for a in simplified_attrs if a["Column"] == "num")
+    assert num_attr["Type"] == "numeric"
+    assert num_attr["Missing %"] == "33.3%"
+    assert num_attr["Unique"] == 2
+    assert "mean" in num_attr["Summary"] or "range" in num_attr["Summary"] or "min" in num_attr["Summary"]
+
+    cat_attr = next(a for a in simplified_attrs if a["Column"] == "cat")
+    assert cat_attr["Type"] == "categorical"
+    assert cat_attr["Missing %"] == "0.0%"
+    assert cat_attr["Unique"] == 2
+
+    # 2. Finding row simplification
+    finding_dicts = [finding.to_dict() for finding in bundle.eda.findings]
+    assert len(finding_dicts) > 0
+    simplified_findings = [_simplify_finding_row(d) for d in finding_dicts]
+    for s_finding in simplified_findings:
+        assert s_finding["Type"] != "N/A"
+        assert s_finding["Finding"] != "N/A"
+        assert s_finding["Evidence"].endswith("ref(s)")
+
