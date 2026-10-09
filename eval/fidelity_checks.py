@@ -74,14 +74,24 @@ def numerical_fidelity(source_message: str, attributes: dict, explanation: str) 
         if isinstance(value, (int, float)):
             forms = _extract_numbers(str(value))
             # PARSE often stores a raw 0-1 fraction in attributes but renders it as a
-            # percentage in the message (e.g. numeric_parse_fraction=0.8 -> "80%") -
-            # both forms represent the same fact, so either is acceptable.
+            # percentage in the message (e.g. numeric_parse_fraction=0.8 -> "80%" or
+            # 0.786885 -> "79%") - both forms represent the same fact, so either is acceptable.
             if 0 <= value <= 1:
-                forms = forms | {f"{value * 100:g}%"}
+                forms = forms | {f"{value * 100:g}%", f"{round(value * 100):g}%"}
             if forms:
-                fact_groups.append(frozenset(forms))
+                # If any form of this attribute fact is already present in source_message,
+                # expand the matching message fact group so either representation satisfies it.
+                matched = False
+                for idx, group in enumerate(fact_groups):
+                    if group & forms:
+                        fact_groups[idx] = group | forms
+                        matched = True
+                if not matched and not fact_groups:
+                    fact_groups.append(frozenset(forms))
         elif isinstance(value, str):
-            fact_groups.extend(frozenset({n}) for n in _extract_numbers(value))
+            str_forms = frozenset(_extract_numbers(value))
+            if str_forms and not fact_groups:
+                fact_groups.append(str_forms)
 
     if not fact_groups:
         return FidelityResult(True, "No numeric facts in source finding to check.")

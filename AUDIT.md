@@ -27,6 +27,43 @@
   4. Notice why existing tests (`test_app_web_data_shapes.py`) did not catch this: `test_app_web_does_not_use_legacy_eda_attribute_paths` checks source text for AST access like `finding.kind` (which was removed from the AST and replaced with `row.get("kind")` dictionary lookup). `test_app_web_data_explorer_shape_contract` tests property access on `bundle.eda.findings` directly, but never executes `_simplify_finding_row` or `_simplify_attribute_row`.
 - **Impact:** While the app does not raise an unhandled exception (due to `.get("...", "N/A")`), the user is presented with columns filled entirely with `"N/A"` for Type and Finding, and `"0.0%"` for Missingness, completely breaking the Data Explorer summary tab.
 
+### Defect 2: Silent `999.0` Distance Fallback Masking Confidence Failures (`ml/predictor.py`)
+- **Severity:** Medium (Silent failure mode).
+- **Location:** `ml/predictor.py` lines 274–286.
+- **Root Cause:**
+  When `Predictor.predict()` calls `nearest_neighbor_distance(row)` to compute prediction confidence, it wraps the call in a bare `try...except Exception:` block:
+  ```python
+  try:
+      from ml.similarity import nearest_neighbor_distance
+      dist = nearest_neighbor_distance(row)
+      if dist <= 1.05:
+          confidence = "high"
+      elif dist <= 1.82:
+          confidence = "medium"
+      else:
+          confidence = "low"
+  except Exception:
+      confidence = "medium"
+      dist = 999.0
+  ```
+  If `nearest_neighbor_distance` fails (e.g. data file missing, schema corruption, import failure), the error is completely swallowed. The caller receives `confidence = "medium"` and `distance = 999.0` with no warning or indication that distance computation threw an exception.
+- **Reproduction:**
+  Call `Predictor.predict()` when `DATA_FILE` is inaccessible or when `nearest_neighbor_distance` raises an exception. The function succeeds and silently outputs `{"confidence": "medium", "distance": 999.0}`.
+
+### Defect 3: Per-Prediction Full Excel Reload in Nearest Neighbor Distance (`ml/similarity.py`)
+- **Severity:** Medium (Latency / I/O inefficiency).
+- **Location:** `ml/similarity.py` lines 19–38.
+- **Root Cause:**
+  `nearest_neighbor_distance(query_scaled)` invokes:
+  ```python
+  from departments.blast_furnace.feature_processing import load_and_build
+  res = load_and_build()
+  ```
+  `load_and_build()` parses the entire Excel workbook (`data_files/data_result.xlsx`, sheet `"Data Analysis"`) via `openpyxl`, builds all chemistry/atmosphere/burden features, fits brand-new `StandardScaler` instances, and constructs the feature matrix `X` on *every single prediction request*.
+  This adds ~500ms–1.5s of disk I/O and CPU overhead to every single query in `app_web.py` rather than reusing the training matrix cached during model initialization.
+- **Reproduction:**
+  Profile `p.predict(...)`: execution time is dominated by `pd.read_excel()` inside `load_raw()` called from `similarity.py:34`.
+
 ---
 
 ## 2. Consumer Map: Legacy vs. Modern EDA

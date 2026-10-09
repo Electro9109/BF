@@ -2,26 +2,28 @@
 run_comparison.py
 -------------------
 Runs a PARSE-shaped eval set (built by build_parse_eval_set.py) through
-both the base Qwen3-4B-Instruct-2507 model and the fine-tuned adapter,
-scoring each with the automated fidelity checks, side by side -- the
-training plan's own stated bar ("Cochrane performance alone isn't
-enough").
-
-This does NOT run the comparison itself as part of Task 24 -- it's the
-harness, ready to point at the Kaggle adapter once it's downloaded. See
-Task 24's scope notes.
+both the base Qwen3-4B-Instruct-2507 model and the fine-tuned v0.3 adapter,
+scoring each with the automated fidelity checks, side by side.
 
 Usage
 -----
   python eval/run_comparison.py \\
       --eval-set eval/parse_eval_set.json \\
       --base-model Qwen/Qwen3-4B-Instruct-2507 \\
-      --adapter-path /path/to/downloaded/adapter \\
+      --adapter-path parse/models/qwen3-explainer-v0.3 \\
       --out eval/comparison_results.json
 
-Generator functions are pluggable (see build_generator()) so this can
-run against a local transformers pipeline, an API endpoint, or a stub
-for dry-testing the harness itself without any model loaded.
+  # Smoke-test the harness without any model:
+  python eval/run_comparison.py --dry-run
+
+Design constraints
+------------------
+- Uses the SAME prompt builder (parse.explainer_prompt) as production.
+  There is no separate prompt format for evaluation.
+- Uses Qwen's chat template via tokenizer.apply_chat_template().
+- Uses greedy decoding (do_sample=False) for determinism.
+- Scores ONLY newly generated tokens.  The prompt is sliced off before
+  scoring so the harness never grades the input as model output.
 """
 
 import argparse
@@ -29,33 +31,21 @@ import json
 from typing import Callable
 
 from eval.fidelity_checks import run_all_checks
+from parse.explainer_prompt import build_chat_messages
 
 
-PROMPT_TEMPLATE = (
-    "Explain the following technical finding clearly to a non-specialist. "
-    "Preserve all numbers, the relationship direction, and any stated "
-    "limitations exactly. Do not turn an association into a causal claim. "
-    "Do not invent facts, causes, or recommendations not present below.\n\n"
-    "Finding: {message}\n"
-    "Details: {attributes}\n"
-    "Limitations: {limitations}"
-)
+def _build_generator_fn(model_id: str, adapter_path: str | None = None) -> Callable[[dict], str]:
+    """Return a finding-dict -> explanation-text function.
 
+    transformers/peft are lazy-imported so that ``--dry-run`` mode (or unit
+    tests that import this module) never require them.
 
-def build_prompt(finding: dict) -> str:
-    return PROMPT_TEMPLATE.format(
-        message=finding["message"],
-        attributes=finding.get("attributes", {}),
-        limitations=finding.get("limitations", []),
-    )
-
-
-def build_generator(model_id: str, adapter_path: str | None = None) -> Callable[[str], str]:
-    """Returns a prompt -> text function for the given model, loading it lazily.
-
-    transformers/peft are heavy optional dependencies -- only imported if
-    this is actually called, so importing this module (e.g. for --dry-run)
-    never requires them installed.
+    The generator:
+    1. Uses build_chat_messages() (same as production) to format the prompt.
+    2. Applies the tokenizer's chat template.
+    3. Runs greedy decoding (do_sample=False).
+    4. Slices off the prompt tokens before decoding so that only newly
+       generated text is returned (prompt-echo protection).
     """
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -64,27 +54,60 @@ def build_generator(model_id: str, adapter_path: str | None = None) -> Callable[
 
     if adapter_path:
         from peft import PeftModel
-
         model = PeftModel.from_pretrained(model, adapter_path)
 
-    def generate(prompt: str) -> str:
-        inputs = tokenizer(prompt, return_tensors="pt")
-        output = model.generate(**inputs, max_new_tokens=256)
-        return tokenizer.decode(output[0], skip_special_tokens=True)
+    model.eval()
+
+    def generate(finding: dict) -> str:
+        import torch
+
+        # Use the shared prompt builder — same format as production
+        messages = build_chat_messages(finding)
+
+        text_input = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        inputs = tokenizer(text_input, return_tensors="pt")
+        n_prompt = inputs["input_ids"].shape[1]
+
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=256,
+                do_sample=False,      # greedy — deterministic
+            )
+
+        # Slice off prompt tokens; score only newly generated tokens
+        new_ids = output_ids[0][n_prompt:]
+        return tokenizer.decode(new_ids, skip_special_tokens=True).strip()
 
     return generate
 
 
-def score_examples(examples: list[dict], generate: Callable[[str], str]) -> list[dict]:
+def build_generator(model_id: str, adapter_path: str | None = None) -> Callable[[dict], str]:
+    """Public entry point for building a generator function.
+
+    Kept as an alias so external callers and existing tests continue to work.
+    """
+    return _build_generator_fn(model_id, adapter_path)
+
+
+def score_examples(examples: list[dict], generate: Callable[[dict], str]) -> list[dict]:
+    """Run ``generate`` on every finding and score the explanation."""
     results = []
     for finding in examples:
-        explanation = generate(build_prompt(finding))
+        explanation = generate(finding)
         checks = run_all_checks(finding, explanation)
         results.append(
             {
                 "finding_id": finding["finding_id"],
                 "explanation": explanation,
-                "checks": {name: {"passed": r.passed, "detail": r.detail} for name, r in checks.items()},
+                "checks": {
+                    name: {"passed": r.passed, "detail": r.detail}
+                    for name, r in checks.items()
+                },
                 "all_passed": all(r.passed for r in checks.values()),
             }
         )
@@ -95,7 +118,10 @@ def summarize(results: list[dict]) -> dict:
     total = len(results)
     if total == 0:
         return {"total": 0}
-    summary = {"total": total, "all_passed_rate": sum(r["all_passed"] for r in results) / total}
+    summary = {
+        "total": total,
+        "all_passed_rate": sum(r["all_passed"] for r in results) / total,
+    }
     for check_name in ("numerical_fidelity", "causal_language", "limitation_preserved"):
         passed = sum(r["checks"][check_name]["passed"] for r in results)
         summary[f"{check_name}_pass_rate"] = passed / total
@@ -103,15 +129,25 @@ def summarize(results: list[dict]) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Compare base vs. fine-tuned Explainer LLM on a PARSE eval set.")
+    parser = argparse.ArgumentParser(
+        description="Compare base vs. fine-tuned Explainer LLM on a PARSE eval set."
+    )
     parser.add_argument("--eval-set", default="eval/parse_eval_set.json")
     parser.add_argument("--base-model", default="Qwen/Qwen3-4B-Instruct-2507")
-    parser.add_argument("--adapter-path", default=None, help="Path to the downloaded Kaggle LoRA adapter")
+    parser.add_argument(
+        "--adapter-path",
+        default="parse/models/qwen3-explainer-v0.3",
+        help="Path to the local v0.3 LoRA adapter directory.",
+    )
     parser.add_argument("--out", default="eval/comparison_results.json")
     parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Skip model loading entirely; echoes the finding message back as a stand-in "
-        "'explanation', to smoke-test the harness plumbing without any model installed.",
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Skip model loading entirely; echoes the finding message back as "
+            "a stand-in 'explanation', to smoke-test the harness plumbing "
+            "without any model installed."
+        ),
     )
     args = parser.parse_args()
 
@@ -119,7 +155,9 @@ def main():
         examples = json.load(f)
 
     if args.dry_run:
-        generate_base = generate_finetuned = lambda prompt: prompt.split("Finding: ")[-1].split("\n")[0]
+        # Echo the finding message — never echoes the full prompt, only the message field.
+        # This correctly simulates the 'generated text only' slice.
+        generate_base = generate_finetuned = lambda finding: finding["message"]
     else:
         generate_base = build_generator(args.base_model)
         generate_finetuned = build_generator(args.base_model, adapter_path=args.adapter_path)
@@ -135,9 +173,9 @@ def main():
     with open(args.out, "w") as f:
         json.dump(output, f, indent=2)
 
-    print(f"Base model summary:      {output['base']['summary']}")
+    print(f"Base model summary:       {output['base']['summary']}")
     print(f"Fine-tuned model summary: {output['finetuned']['summary']}")
-    print(f"Full results written to {args.out}")
+    print(f"Full results written to   {args.out}")
 
 
 if __name__ == "__main__":

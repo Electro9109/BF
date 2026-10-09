@@ -9,10 +9,10 @@
 
 - **Canonical Engine:** `parse/analysis.py` (`AnalysisOrchestrator` / `EDAResult` / `Finding`) remains the primary engine.
 - **Port Missing Capabilities:** Add the 4 capabilities currently in legacy that are absent or incomplete in `parse/analysis.py`:
-  1. **Skewness Finding:** When `abs(distribution.skewness) >= 1.0`, emit finding `skew:<col>` (category: `"distribution"`, observation: `"Column '{col}' is strongly skewed (skewness {val:.2f})."`).
+  1. **Skewness Finding:** When `abs(distribution.skewness) >= 1.0`, emit finding `skew:<col>` (category: `"shape"` to isolate from outlier detection, observation: `"Column '{col}' is strongly skewed (skewness {val:.2f})."`).
   2. **Mixed Numeric/Text Finding:** When `is_text_like(series)` and `0 < numeric_fraction < 1`, emit finding `mixed_values:<col>` (category: `"quality"`, observation: `"Column '{col}' mixes numeric-like and non-numeric values ({pct:.0%} parse as numbers)."`).
   3. **Sparse Column Finding:** When `attribute.missing_rate >= 0.5`, emit finding `sparse:<col>` (category: `"quality"`, observation: `"Column '{col}' is sparse with {pct:.0%} missing values."`).
-  4. **Categorical-Numeric Group Difference Finding:** When a categorical column has low cardinality and a numeric column displays mean spread across groups, emit `group_difference:<cat>:<num>` (category: `"relationship"`).
+  4. **Categorical-Numeric Group Difference Finding:** When a categorical column has low cardinality and a numeric column displays mean spread across groups, emit `group_difference:<cat>:<num>` (category: `"group_difference"` to prevent skewing `RelevanceAnalyzer` relationship scoring).
   *(Note on Next Actions: In modern PARSE architecture, next actions are workflow guidance, not raw data observations. We will provide an explicit method `generate_next_actions(eda_result: EDAResult) -> list[NextAction]` in `parse/analysis.py` so downstream callers have access to it without conflating it with statistical observations.)*
 
 ---

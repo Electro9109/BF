@@ -1,5 +1,6 @@
 import pandas as pd
 
+from parse.analysis import AnalysisOrchestrator, AnalysisRequest
 from parse.cleaning import DataCleaner
 from parse.core import SourceRef
 from parse.eda import DataUnderstanding
@@ -28,7 +29,7 @@ def test_cleaner_proposes_changes_without_mutating_input():
 def test_cleaner_applies_only_approved_proposals_and_records_lineage():
     frame = pd.DataFrame({"id": [1, 2, 2], "value": [10.0, None, None]})
     source = SourceRef("dataset-a", "csv", "a.csv")
-    eda = DataUnderstanding(source).profile(frame)
+    eda = AnalysisOrchestrator().analyze(AnalysisRequest(frame, source))
 
     result = DataCleaner(source).clean(frame, approved=["impute_value"], eda_result=eda)
 
@@ -43,7 +44,9 @@ def test_cleaner_applies_only_approved_proposals_and_records_lineage():
 
 def test_cleaner_does_not_propose_mixed_values_or_outlier_deletion():
     frame = pd.DataFrame({"value": ["1", "unknown", "1000"]})
-    issues, proposals = DataCleaner().detect(frame, DataUnderstanding().profile(frame))
+    source = SourceRef("dataset-mixed", "csv", "mixed.csv")
+    eda = AnalysisOrchestrator().analyze(AnalysisRequest(frame, source))
+    issues, proposals = DataCleaner().detect(frame, eda)
 
     assert any(issue.kind == "mixed_values" for issue in issues)
     assert not any(proposal.action in {"convert_type", "remove_outliers"} for proposal in proposals)
@@ -67,7 +70,8 @@ def test_mixed_values_issue_carries_evidence_without_context():
     # Heuristic-only path: no CleaningContext/attribute_profiles supplied.
     frame = pd.DataFrame({"value": ["1", "unknown", "1000"]})
     source = SourceRef("dataset-b", "csv", "b.csv")
-    issues, _ = DataCleaner(source).detect(frame, DataUnderstanding().profile(frame))
+    eda = AnalysisOrchestrator().analyze(AnalysisRequest(frame, source))
+    issues, _ = DataCleaner(source).detect(frame, eda)
 
     mixed_issue = next(issue for issue in issues if issue.kind == "mixed_values")
     assert len(mixed_issue.evidence) > 0

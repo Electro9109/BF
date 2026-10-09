@@ -63,7 +63,12 @@ def load_uploaded_dataset(filename: str, content: bytes) -> tuple[pd.DataFrame, 
 
 
 def profile_uploaded_dataset(filename: str, content: bytes) -> LegacyEDAResult:
-    """Read an uploaded CSV/Excel payload and return a read-only EDA result."""
+    """Read an uploaded CSV/Excel payload and return a read-only EDA result.
+    
+    TODO(Task 27): Migrate return type to canonical EDAResult once downstream callers
+    expecting LegacyEDAResult (such as tests/test_eda_ui.py) are updated in PARSE 2.0.
+    Currently retained for backward compatibility with existing tests.
+    """
     frame, source = load_uploaded_dataset(filename, content)
     return DataUnderstanding(source).profile(frame)
 

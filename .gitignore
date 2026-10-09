@@ -11,3 +11,18 @@ chroma_db/
 data_files/*.xlsx
 MLModels/*.pkl
 .ipynb_checkpoints/
+
+# PARSE Explainer model weights — load from HF cache or local lora/ folder
+# Do NOT commit adapter weights or large tokenizer files to Git
+parse/models/
+lora/
+*.safetensors
+model.safetensors.index.json
+config.json
+generation_config.json
+merges.txt
+vocab.json
+tokenizer*.json
+gitattributes
+README(1).md
+LICENSE

@@ -72,6 +72,7 @@ def finding_to_explainer_example(finding: Finding) -> dict[str, Any]:
     elif fid.startswith("group_difference:"):
         parts = fid.split(":")
         fid = f"group_difference_{parts[1]}_{parts[2]}"
+        cat = "relationship"
     elif fid.startswith("role:"):
         col = fid.split(":", 1)[1]
         fid = f"identifier_{col}"
@@ -122,24 +123,23 @@ def finding_to_explainer_example(finding: Finding) -> dict[str, Any]:
         attributes["numeric_parse_fraction"] = npf
         message = f"Column '{col}' mixes numeric-like and non-numeric values ({npf:.0%} parse as numbers)."
     elif fid.startswith("relationship_"):
-        # Match legacy EDA: left, right, correlation
-        # Message has 3 decimals (or 2 in legacy). Round value to match message format.
         method = attributes.get("selected_method", "pearson")
         corr_val = attributes.get(method, attributes.get("pearson", 0.0))
-        corr_val = round(float(corr_val), 3)
         left, right = finding.subject if isinstance(finding.subject, tuple) else (None, None)
-        attributes = {"left": left, "right": right, "correlation": corr_val}
+        attributes.setdefault("left", left)
+        attributes.setdefault("right", right)
         message = f"'{left}' and '{right}' have a strong observed {method} correlation ({corr_val:.3f})."
     elif fid.startswith("association_"):
-        # Match legacy association attributes: cramers_v rounded to match message
-        v = round(float(attributes.get("cramers_v", 0.0)), 3)
+        v = float(attributes.get("cramers_v", 0.0))
         left, right = finding.subject if isinstance(finding.subject, tuple) else (None, None)
-        attributes = {"left": left, "right": right, "cramers_v": v}
+        attributes.setdefault("left", left)
+        attributes.setdefault("right", right)
         message = f"'{left}' and '{right}' show an observed categorical association (Cramer's V {v:.3f})."
     elif fid.startswith("group_difference_"):
-        spread = round(float(attributes.get("mean_spread", 0.0)), 2)
+        spread = float(attributes.get("mean_spread", 0.0))
         cat_attr, num_attr = finding.subject if isinstance(finding.subject, tuple) else (None, None)
-        attributes = {"category": cat_attr, "numeric": num_attr, "mean_spread": spread}
+        attributes.setdefault("category", cat_attr)
+        attributes.setdefault("numeric", num_attr)
         message = f"Mean '{num_attr}' differs across '{cat_attr}' groups (spread {spread:.2f})."
 
     return {

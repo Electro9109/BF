@@ -5,6 +5,12 @@ from parse.eda import DataUnderstanding
 from parse.core import SourceRef
 
 
+def test_data_understanding_emits_deprecation_warning():
+    """Assert DataUnderstanding raises a DeprecationWarning pointing to AnalysisOrchestrator."""
+    with pytest.deprecated_call(match="DataUnderstanding is deprecated"):
+        _ = DataUnderstanding()
+
+
 def test_eda_profiles_structure_quality_and_actions_without_mutating_data():
     frame = pd.DataFrame(
         {
@@ -15,7 +21,8 @@ def test_eda_profiles_structure_quality_and_actions_without_mutating_data():
         }
     )
     original = frame.copy(deep=True)
-    result = DataUnderstanding(SourceRef("dataset-a", "csv", "a.csv")).profile(frame)
+    with pytest.deprecated_call():
+        result = DataUnderstanding(SourceRef("dataset-a", "csv", "a.csv")).profile(frame)
 
     assert result.row_count == 4
     assert result.column_count == 4
@@ -38,7 +45,8 @@ def test_eda_handles_categorical_text_and_relationships_cautiously():
             "signal_b": [2.0, 4.0, 6.0, 8.0],
         }
     )
-    result = DataUnderstanding().profile(frame)
+    with pytest.deprecated_call():
+        result = DataUnderstanding().profile(frame)
 
     category = next(column for column in result.columns if column.name == "category")
     assert category.inferred_type == "categorical"
@@ -58,7 +66,8 @@ def test_eda_reports_distribution_temporal_and_group_findings():
         }
     )
 
-    result = DataUnderstanding().profile(frame)
+    with pytest.deprecated_call():
+        result = DataUnderstanding().profile(frame)
     categories = {finding.category for finding in result.findings}
 
     assert "statistical" in categories
@@ -72,7 +81,8 @@ def test_eda_reports_distribution_temporal_and_group_findings():
 def test_eda_marks_uncertain_numeric_text_types():
     frame = pd.DataFrame({"value": ["1.0", "2.0", "unknown"]})
 
-    result = DataUnderstanding().profile(frame)
+    with pytest.deprecated_call():
+        result = DataUnderstanding().profile(frame)
     value = result.columns[0]
 
     assert value.inferred_type == "categorical"
@@ -80,8 +90,10 @@ def test_eda_marks_uncertain_numeric_text_types():
 
 
 def test_eda_reports_mixed_numeric_text_and_empty_input():
-    mixed = DataUnderstanding().profile(pd.DataFrame({"value": ["1", "unknown", "3"]}))
-    empty = DataUnderstanding().profile(pd.DataFrame(columns=["value"]))
+    with pytest.deprecated_call():
+        mixed = DataUnderstanding().profile(pd.DataFrame({"value": ["1", "unknown", "3"]}))
+    with pytest.deprecated_call():
+        empty = DataUnderstanding().profile(pd.DataFrame(columns=["value"]))
 
     assert any(finding.category == "quality" and "mixes numeric-like" in finding.message for finding in mixed.findings)
     assert any(issue.code == "empty_dataset" for issue in empty.issues)
@@ -89,7 +101,8 @@ def test_eda_reports_mixed_numeric_text_and_empty_input():
 
 def test_eda_does_not_recommend_prediction_without_candidate_target():
     frame = pd.DataFrame({"name": ["a", "b"], "value": [1, 2]})
-    result = DataUnderstanding().profile(frame)
+    with pytest.deprecated_call():
+        result = DataUnderstanding().profile(frame)
 
     prediction = next(action for action in result.next_actions if action.action == "build_prediction")
     assert prediction.applicable is False
@@ -100,7 +113,8 @@ def test_eda_reads_csv_without_modifying_the_source(tmp_path):
     source = tmp_path / "dataset.csv"
     pd.DataFrame({"id": [1, 2], "target": [10.0, 11.0]}).to_csv(source, index=False)
 
-    result = DataUnderstanding.from_file(source)
+    with pytest.deprecated_call():
+        result = DataUnderstanding.from_file(source)
 
     assert result.source.source_type == "csv"
     assert result.source.label == "dataset.csv"

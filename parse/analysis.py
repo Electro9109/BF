@@ -478,7 +478,7 @@ class AnalysisOrchestrator:
                 grouped = frame.groupby(cat_attr, dropna=False)[num_attr].mean().dropna()
                 if len(grouped) >= 2 and grouped.max() != grouped.min():
                     spread = float(grouped.max() - grouped.min())
-                    findings.append(self._finding(source, f"group_difference:{cat_attr}:{num_attr}", "relationship", (cat_attr, num_attr),
+                    findings.append(self._finding(source, f"group_difference:{cat_attr}:{num_attr}", "group_difference", (cat_attr, num_attr),
                         f"Mean '{num_attr}' differs across '{cat_attr}' groups (spread {spread:.2f}).",
                         "group_mean_spread", {"category": cat_attr, "numeric": num_attr, "mean_spread": spread},
                         assumptions=("Observations are grouped by categorical levels.",),

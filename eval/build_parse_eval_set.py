@@ -2,15 +2,21 @@
 build_parse_eval_set.py
 ------------------------
 Builds a PARSE-shaped eval set for the Explainer LLM from what
-DataUnderstanding.profile() and DataCleaner.detect() actually produce
-today -- not from Cochrane/SciTLDR/No Robots, none of which contain
-anything in PARSE's own finding format. See Task 24.
+AnalysisOrchestrator and DataCleaner.detect() produce via parse.explainer_adapter.
+
+Note on Baseline Comparability:
+The canonical eval set contains 21 examples, retaining 100% of the 19 legacy
+examples while adding 2 new findings produced by modern detection:
+  1. 'association_mixed_column_group_flag' (categorical association via Cramer's V)
+  2. 'conflicting_identifier_record_id' (candidate key conflict across duplicate rows)
+When benchmarking aggregate metrics against legacy Task 24 baselines, filter out
+these two new finding IDs or report per-finding metrics.
 
 Runs against a synthetic dataset with deliberately planted issues
 (missing values, mixed types, outliers, skew, duplicates) by default,
 so this works without any real plant data. Pass --data to run against
 a real file instead (CSV/XLSX) -- nothing here writes or modifies the
-source, same as DataUnderstanding/DataCleaner themselves.
+source, same as DataCleaner itself.
 
 Usage
 -----

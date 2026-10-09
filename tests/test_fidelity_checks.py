@@ -55,6 +55,24 @@ def test_numerical_fidelity_handles_percentage_values():
     assert result.passed
 
 
+def test_numerical_fidelity_handles_rounded_percentage_values():
+    result = numerical_fidelity(
+        "Column 'x' mixes numeric-like and non-numeric values (79% parse as numbers).",
+        {"numeric_parse_fraction": 0.786885},
+        "79% of the values parse as numbers.",
+    )
+    assert result.passed
+
+
+def test_numerical_fidelity_does_not_fail_on_unmentioned_internal_attributes():
+    result = numerical_fidelity(
+        "The categorical attributes show an observed association (Cramer's V 0.892).",
+        {"cramers_v": 0.891932, "chi_square": 48.528, "sample_size": 61},
+        "The attributes show an association with Cramer's V of 0.892.",
+    )
+    assert result.passed
+
+
 # ── causal_language_check ───────────────────────────────────────────────
 
 def test_causal_language_passes_with_no_causal_phrasing():

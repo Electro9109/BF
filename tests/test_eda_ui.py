@@ -7,7 +7,8 @@ from parse.eda_ui import load_uploaded_dataset, profile_uploaded_dataset
 def test_uploaded_csv_is_profiled_with_upload_provenance():
     content = pd.DataFrame({"id": [1, 2], "target": [3.0, 4.0]}).to_csv(index=False).encode()
 
-    result = profile_uploaded_dataset("sample.csv", content)
+    with pytest.deprecated_call(match="DataUnderstanding is deprecated"):
+        result = profile_uploaded_dataset("sample.csv", content)
 
     assert result.source.source_id == "upload:sample.csv"
     assert result.source.source_type == "csv"
