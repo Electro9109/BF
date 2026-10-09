@@ -94,6 +94,9 @@ def build_generator(model_id: str, adapter_path: str | None = None) -> Callable[
     return _build_generator_fn(model_id, adapter_path)
 
 
+HARD_CHECKS = {"numerical_fidelity", "causal_language", "limitation_preserved"}
+
+
 def score_examples(examples: list[dict], generate: Callable[[dict], str]) -> list[dict]:
     """Run ``generate`` on every finding and score the explanation."""
     results = []
@@ -108,7 +111,9 @@ def score_examples(examples: list[dict], generate: Callable[[dict], str]) -> lis
                     name: {"passed": r.passed, "detail": r.detail}
                     for name, r in checks.items()
                 },
-                "all_passed": all(r.passed for r in checks.values()),
+                "all_passed": all(
+                    r.passed for name, r in checks.items() if name in HARD_CHECKS
+                ),
             }
         )
     return results
@@ -122,9 +127,15 @@ def summarize(results: list[dict]) -> dict:
         "total": total,
         "all_passed_rate": sum(r["all_passed"] for r in results) / total,
     }
-    for check_name in ("numerical_fidelity", "causal_language", "limitation_preserved"):
-        passed = sum(r["checks"][check_name]["passed"] for r in results)
-        summary[f"{check_name}_pass_rate"] = passed / total
+    for check_name in (
+        "numerical_fidelity",
+        "causal_language",
+        "limitation_preserved",
+        "unsupported_novelty",
+    ):
+        if results and check_name in results[0]["checks"]:
+            passed = sum(r["checks"][check_name]["passed"] for r in results)
+            summary[f"{check_name}_pass_rate"] = passed / total
     return summary
 
 

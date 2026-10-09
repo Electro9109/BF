@@ -7,6 +7,7 @@ from eval.fidelity_checks import (
     numerical_fidelity,
     causal_language_check,
     limitation_preserved,
+    unsupported_novelty,
     run_all_checks,
 )
 
@@ -131,9 +132,37 @@ def test_limitation_preserved_fails_when_dropped():
     assert not result.passed
 
 
+# ── unsupported_novelty ──────────────────────────────────────────────────
+
+def test_unsupported_novelty_passes_on_grounded_text():
+    result = unsupported_novelty(
+        "Column 'temp' contains 3 IQR-based statistical outliers.",
+        {"column": "temp", "count": 3},
+        ("Statistical outliers are not always errors.",),
+        "The temp column has 3 outliers based on IQR, but these might not be errors.",
+    )
+    assert result.passed
+
+
+def test_unsupported_novelty_flags_when_many_novel_terms():
+    result = unsupported_novelty(
+        "Column 'temp' contains 3 IQR-based statistical outliers.",
+        {"column": "temp", "count": 3},
+        ("Statistical outliers are not always errors.",),
+        "Quantum superposition causes electromagnetic resonance in topological insulators.",
+    )
+    assert not result.passed
+    assert "High novel-vocabulary ratio" in result.detail
+
+
+def test_unsupported_novelty_handles_empty_explanation():
+    result = unsupported_novelty("Source message", {}, (), "")
+    assert result.passed
+
+
 # ── run_all_checks ───────────────────────────────────────────────────────
 
-def test_run_all_checks_returns_all_three():
+def test_run_all_checks_returns_all_expected():
     finding = {
         "message": "Column 'x' contains 3 IQR-based statistical outlier(s).",
         "attributes": {"column": "x", "count": 3},
@@ -145,5 +174,14 @@ def test_run_all_checks_returns_all_three():
         "That doesn't automatically mean there's an error in the data."
     )
     results = run_all_checks(finding, explanation)
-    assert set(results.keys()) == {"numerical_fidelity", "causal_language", "limitation_preserved"}
+    assert set(results.keys()) == {
+        "numerical_fidelity",
+        "causal_language",
+        "limitation_preserved",
+        "unsupported_novelty",
+    }
     assert all(r.passed for r in results.values())
+
+
+# Retain backwards-compatibility alias if any external callers invoke test by name
+test_run_all_checks_returns_all_three = test_run_all_checks_returns_all_expected

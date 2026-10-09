@@ -18,7 +18,7 @@ parse/models/
 lora/
 *.safetensors
 model.safetensors.index.json
-config.json
+/config.json
 generation_config.json
 merges.txt
 vocab.json

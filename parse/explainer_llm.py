@@ -54,6 +54,7 @@ ADAPTER_PATH = _REPO_ROOT / "parse" / "models" / "qwen3-explainer-v0.3"
 
 MAX_NEW_TOKENS = 256
 ENABLED_ENV_VAR = "PARSE_EXPLAINER_ENABLED"
+BASE_MODEL_PATH_ENV_VAR = "PARSE_BASE_MODEL_PATH"
 
 # ── State ──────────────────────────────────────────────────────────────────────
 
@@ -93,6 +94,25 @@ def is_enabled() -> bool:
     return val not in ("0", "false", "no", "off")
 
 
+def _resolve_base_model_path() -> str:
+    """Return the base model path/ID.
+
+    Priority:
+    1. PARSE_BASE_MODEL_PATH env var (for air-gapped or local-weights usage)
+    2. BASE_MODEL_ID constant (downloads from / uses HF cache)
+    """
+    custom = os.environ.get(BASE_MODEL_PATH_ENV_VAR, "").strip()
+    if custom:
+        p = Path(custom)
+        if p.is_dir():
+            return str(p)
+        logger.warning(
+            "%s=%r is not a directory; falling back to HF model ID %s",
+            BASE_MODEL_PATH_ENV_VAR, custom, BASE_MODEL_ID,
+        )
+    return BASE_MODEL_ID
+
+
 def load_model() -> None:
     """Explicitly load the base model + LoRA adapter into the module cache.
 
@@ -126,10 +146,17 @@ def load_model() -> None:
             "Install it with: pip install peft"
         ) from exc
 
-    logger.info("Loading base model: %s", BASE_MODEL_ID)
-    _tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
+    base_model_path = _resolve_base_model_path()
+    logger.info("Loading base model: %s", base_model_path)
 
-    base = AutoModelForCausalLM.from_pretrained(BASE_MODEL_ID)
+    # Prefer adapter tokenizer when it ships its own files (e.g. v0.3 adapter
+    # includes tokenizer.json + tokenizer_config.json); fall back to the base.
+    adapter_has_tokenizer = (ADAPTER_PATH / "tokenizer_config.json").is_file()
+    tokenizer_source = str(ADAPTER_PATH) if adapter_has_tokenizer else base_model_path
+    logger.info("Loading tokenizer from: %s", tokenizer_source)
+    _tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)
+
+    base = AutoModelForCausalLM.from_pretrained(base_model_path)
     logger.info("Loading LoRA adapter from: %s", ADAPTER_PATH)
     _model = PeftModel.from_pretrained(base, str(ADAPTER_PATH))
     _model.eval()
@@ -175,18 +202,40 @@ def _generate_raw(
     return generated_text, n_prompt, len(new_ids)
 
 
+# Checks that trigger fallback if failed.  Advisory checks (like
+# unsupported_novelty) are logged for human review but do not trigger fallback.
+HARD_FIDELITY_CHECKS = {"numerical_fidelity", "causal_language", "limitation_preserved"}
+
+
 def _validate(record: dict[str, Any], explanation: str) -> tuple[bool, str]:
-    """Run fidelity checks on the explanation.  Returns (passed, detail)."""
+    """Run fidelity checks on the explanation.  Returns (passed, detail).
+
+    Only hard checks (numerical fidelity, causal language, limitation preservation)
+    trigger fallback. Advisory checks are logged for audit/review.
+    """
     from eval.fidelity_checks import run_all_checks
 
     checks = run_all_checks(record, explanation)
     failures = [
         f"{name}: {r.detail}"
         for name, r in checks.items()
-        if not r.passed
+        if name in HARD_FIDELITY_CHECKS and not r.passed
     ]
     if failures:
         return False, "; ".join(failures)
+
+    advisory_warnings = [
+        f"{name}: {r.detail}"
+        for name, r in checks.items()
+        if name not in HARD_FIDELITY_CHECKS and not r.passed
+    ]
+    if advisory_warnings:
+        logger.warning(
+            "Explainer fidelity advisory for finding %s: %s",
+            record.get("finding_id", "unknown"),
+            "; ".join(advisory_warnings),
+        )
+
     return True, "All checks passed."
 
 

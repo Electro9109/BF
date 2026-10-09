@@ -163,9 +163,76 @@ def limitation_preserved(limitations: tuple, explanation: str, min_overlap: int 
     )
 
 
+# Words the model commonly uses that are benign elaborations, not novel claims.
+_NOVELTY_STOPWORDS = {
+    "this", "that", "these", "those", "which", "with", "from", "about",
+    "have", "been", "were", "also", "such", "into", "than", "each",
+    "some", "other", "more", "most", "very", "only", "does", "mean",
+    "data", "value", "values", "column", "based", "analysis", "should",
+    "could", "would", "might", "note", "however", "therefore",
+    "overall", "particular", "important", "suggest", "suggests",
+    "indicate", "indicates", "approximately", "around", "roughly",
+}
+
+
+def unsupported_novelty(
+    source_message: str,
+    attributes: dict,
+    limitations: tuple,
+    explanation: str,
+    max_novel_ratio: float = 0.45,
+) -> FidelityResult:
+    """Flag explanations that introduce substantial novel vocabulary.
+
+    This is a soft advisory check -- it flags output for human review but
+    should NOT be treated as proof of an error.  The model is allowed to
+    rephrase; this check catches cases where it invents entire new concepts
+    or terminology that have no basis in the source finding.
+
+    The check computes the ratio of explanation-only tokens (4+ letter words
+    not appearing anywhere in the source) to total explanation tokens.
+    A high ratio suggests the model may be fabricating content.
+    """
+    # Combine all source text for comparison
+    source_parts = [source_message]
+    for v in attributes.values():
+        source_parts.append(str(v))
+    for lim in limitations:
+        source_parts.append(str(lim))
+    source_text = " ".join(source_parts)
+
+    source_tokens = _tokenize(source_text) | _NOVELTY_STOPWORDS
+    explanation_tokens = _tokenize(explanation)
+
+    if not explanation_tokens:
+        return FidelityResult(True, "Explanation has no scorable tokens.")
+
+    novel = explanation_tokens - source_tokens
+    ratio = len(novel) / len(explanation_tokens)
+
+    if ratio > max_novel_ratio:
+        return FidelityResult(
+            False,
+            f"High novel-vocabulary ratio ({ratio:.0%}): the explanation introduces "
+            f"many terms not in the source finding. Novel tokens: {sorted(novel)[:10]}... "
+            f"(flagged for review, not auto-fail).",
+        )
+    return FidelityResult(
+        True,
+        f"Novel-vocabulary ratio acceptable ({ratio:.0%}, "
+        f"threshold {max_novel_ratio:.0%}).",
+    )
+
+
 def run_all_checks(finding: dict, explanation: str) -> dict[str, FidelityResult]:
-    """Run all three checks against a finding dict (as produced by
+    """Run all checks against a finding dict (as produced by
     build_parse_eval_set.py) and a model-generated explanation.
+
+    The first three checks (numerical_fidelity, causal_language,
+    limitation_preserved) are hard gates -- failures trigger fallback.
+
+    unsupported_novelty is a soft advisory check -- it flags output for
+    human review but does not trigger fallback on its own.
     """
     return {
         "numerical_fidelity": numerical_fidelity(
@@ -176,5 +243,11 @@ def run_all_checks(finding: dict, explanation: str) -> dict[str, FidelityResult]
         ),
         "limitation_preserved": limitation_preserved(
             tuple(finding.get("limitations", ())), explanation
+        ),
+        "unsupported_novelty": unsupported_novelty(
+            finding["message"],
+            finding.get("attributes", {}),
+            tuple(finding.get("limitations", ())),
+            explanation,
         ),
     }

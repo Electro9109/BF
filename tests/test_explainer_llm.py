@@ -24,8 +24,10 @@ import parse.explainer_llm as llm_module
 from parse.explainer_llm import (
     ADAPTER_PATH,
     BASE_MODEL_ID,
+    BASE_MODEL_PATH_ENV_VAR,
     ENABLED_ENV_VAR,
     ExplainerResult,
+    _resolve_base_model_path,
     explain,
     is_enabled,
 )
@@ -238,3 +240,47 @@ def test_adapter_path_is_inside_parse_models():
     assert ADAPTER_PATH.parts[-1] == "qwen3-explainer-v0.3"
     assert "parse" in ADAPTER_PATH.parts
     assert "models" in ADAPTER_PATH.parts
+
+
+# ── Base model path resolution ─────────────────────────────────────────────────
+
+
+def test_resolve_base_model_path_default(monkeypatch):
+    monkeypatch.delenv(BASE_MODEL_PATH_ENV_VAR, raising=False)
+    assert _resolve_base_model_path() == BASE_MODEL_ID
+
+
+def test_resolve_base_model_path_custom_dir(monkeypatch, tmp_path):
+    custom_dir = tmp_path / "custom_base_weights"
+    custom_dir.mkdir()
+    monkeypatch.setenv(BASE_MODEL_PATH_ENV_VAR, str(custom_dir))
+    assert _resolve_base_model_path() == str(custom_dir)
+
+
+def test_resolve_base_model_path_invalid_falls_back(monkeypatch, tmp_path):
+    nonexistent = tmp_path / "does_not_exist"
+    monkeypatch.setenv(BASE_MODEL_PATH_ENV_VAR, str(nonexistent))
+    assert _resolve_base_model_path() == BASE_MODEL_ID
+
+
+# ── Advisory check behavior in _validate ───────────────────────────────────────
+
+
+def test_advisory_check_does_not_trigger_fallback(monkeypatch, outlier_record):
+    """Novel vocabulary triggers advisory logging, but does NOT trigger fallback."""
+    monkeypatch.delenv(ENABLED_ENV_VAR, raising=False)
+    _mock_model_and_tokenizer(llm_module)
+
+    # Explanation preserves 3 outliers and limitation, but adds creative/novel phrasing
+    novel_output = (
+        "Column 'measurement' contains 3 IQR-based statistical outliers. "
+        "A statistical outlier is not automatically a data error. "
+        "Unconventional anisotropic fluctuations were observed in the metallurgical matrix."
+    )
+
+    with patch.object(llm_module, "_generate_raw", return_value=(novel_output, 50, 30)):
+        result = explain(outlier_record)
+
+    assert result.fallback_used is False
+    assert result.text == novel_output
+
