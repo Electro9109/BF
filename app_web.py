@@ -1205,14 +1205,20 @@ with tab_eda:
 
                     configured_adapter = os.environ.get("PARSE_ADAPTER_PATH", "").strip()
                     adapter_path = Path(configured_adapter) if configured_adapter else ADAPTER_PATH
+                    adapter_ready = (
+                        adapter_path.is_dir()
+                        and (adapter_path / "adapter_config.json").is_file()
+                        and (adapter_path / "adapter_model.safetensors").is_file()
+                    )
                     if not explainer_is_enabled():
                         st.warning(
                             "Qwen Explainer is disabled by PARSE_EXPLAINER_ENABLED. "
                             "Enable it in the environment and restart Streamlit to generate model explanations."
                         )
-                    elif not adapter_path.is_dir():
+                    elif not adapter_ready:
                         st.warning(
-                            f"Qwen adapter weights were not found at {adapter_path}. "
+                            f"Qwen adapter files were not found or are incomplete at {adapter_path}. "
+                            "Expected adapter_config.json and adapter_model.safetensors. "
                             "The button remains available so the deterministic source finding can still be shown."
                         )
                     else:
