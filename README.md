@@ -215,11 +215,23 @@ python -m ml.train
 
 The Explainer translates structured analysis findings into clear, natural language explanations.
 
+### Use it in the website
+
+1. Start the application with `streamlit run app_web.py`.
+2. Open **Data Explorer**, upload a CSV/Excel dataset, and select **Profile dataset**.
+3. Expand **Explain findings in plain language (Qwen Explainer)**.
+4. Select one finding, optionally provide an existing recommendation, then select **Generate explanation**.
+5. Review the explanation and its validation/fallback status. The model is loaded only when you request an explanation; RAG Chat and prediction remain separate.
+
 ### Configuration
 
 - **Base Model:** `Qwen/Qwen3-4B-Instruct-2507` (configurable via `PARSE_BASE_MODEL_PATH`)
-- **Adapter:** LoRA adapter at `parse/models/qwen3-explainer-v0.3`
-- **Enable/Disable:** Set `PARSE_EXPLAINER_ENABLED=0` to force fallback mode
+- **Adapter:** LoRA adapter at `parse/models/qwen3-explainer-v0.3` (or set `PARSE_ADAPTER_PATH`)
+- **Enable/Disable:** Set `PARSE_EXPLAINER_ENABLED=0` to force deterministic source-message fallback
+- **Adapter weights are not committed to Git.** Copy the exported v0.3 adapter files into `parse/models/qwen3-explainer-v0.3/`, or point `PARSE_ADAPTER_PATH` at the directory containing `adapter_config.json` and `adapter_model.safetensors`. The adapter directory should also contain its tokenizer files when provided.
+- If the base model is not cached locally, Transformers may need network access to download it on first use. For an air-gapped setup, configure `PARSE_BASE_MODEL_PATH` to an existing local base-model directory.
+
+If the adapter or dependencies are unavailable, the Data Explorer keeps working and displays the original finding as a fallback with diagnostic details.
 
 ### Fidelity Validation
 

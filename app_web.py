@@ -1161,6 +1161,120 @@ with tab_eda:
             else:
                 st.success("No findings were generated for this dataset.")
 
+        # Qwen Explainer — user-triggered, lazy-loaded and independent of RAG chat.
+        with st.expander("Explain findings in plain language (Qwen Explainer)", expanded=False):
+            st.caption(
+                "Translate one selected analysis finding into a clearer explanation. "
+                "The explainer does not run new analysis or invent recommendations."
+            )
+            try:
+                from parse.explainer_adapter import eda_result_to_explainer_examples
+                from parse.explainer_llm import (
+                    ADAPTER_PATH,
+                    BASE_MODEL_ID,
+                    is_enabled as explainer_is_enabled,
+                )
+                import os
+
+                explainer_records = eda_result_to_explainer_examples(eda_result)
+                if not explainer_records:
+                    st.info("There are no findings available to explain.")
+                else:
+                    record_by_id = {
+                        record["finding_id"]: record for record in explainer_records
+                    }
+                    record_labels = {
+                        record["finding_id"]: (
+                            f"{record.get('category', 'finding').title()} — "
+                            f"{record.get('message', '')}"
+                        )
+                        for record in explainer_records
+                    }
+                    selected_finding_id = st.selectbox(
+                        "Finding to explain",
+                        options=list(record_by_id),
+                        format_func=lambda finding_id: record_labels[finding_id],
+                        key="qwen_selected_finding",
+                    )
+                    recommendation = st.text_area(
+                        "Recommendation (optional)",
+                        placeholder="Enter an existing recommendation to explain; leave blank if none was supplied.",
+                        help="Only provide a recommendation that already exists. The model must not invent one.",
+                        key="qwen_recommendation",
+                    )
+
+                    configured_adapter = os.environ.get("PARSE_ADAPTER_PATH", "").strip()
+                    adapter_path = Path(configured_adapter) if configured_adapter else ADAPTER_PATH
+                    adapter_ready = (
+                        adapter_path.is_dir()
+                        and (adapter_path / "adapter_config.json").is_file()
+                        and (adapter_path / "adapter_model.safetensors").is_file()
+                    )
+                    if not explainer_is_enabled():
+                        st.warning(
+                            "Qwen Explainer is disabled by PARSE_EXPLAINER_ENABLED. "
+                            "Enable it in the environment and restart Streamlit to generate model explanations."
+                        )
+                    elif not adapter_ready:
+                        st.warning(
+                            f"Qwen adapter files were not found or are incomplete at {adapter_path}. "
+                            "Expected adapter_config.json and adapter_model.safetensors. "
+                            "The button remains available so the deterministic source finding can still be shown."
+                        )
+                    else:
+                        st.caption(f"Model: {BASE_MODEL_ID} + local LoRA adapter")
+
+                    explain_clicked = st.button(
+                        "Generate explanation",
+                        type="primary",
+                        key="qwen_generate_explanation",
+                    )
+                    result_key = (
+                        selected_finding_id,
+                        recommendation.strip(),
+                    )
+                    if explain_clicked:
+                        record = record_by_id[selected_finding_id]
+                        try:
+                            from parse.explainer_ui import explain_record
+
+                            with st.spinner("Generating and validating explanation…"):
+                                result = explain_record(
+                                    record,
+                                    recommendation=recommendation.strip() or None,
+                                )
+                            st.session_state.qwen_explainer_result = {
+                                "key": result_key,
+                                "text": result.text,
+                                "fallback_used": result.fallback_used,
+                                "detail": result.validation_detail,
+                            }
+                        except Exception as exc:
+                            # UI failures must not hide the source finding or break the page.
+                            st.session_state.qwen_explainer_result = {
+                                "key": result_key,
+                                "text": record.get("message", ""),
+                                "fallback_used": True,
+                                "detail": f"Explainer integration error: {exc}",
+                            }
+
+                    saved_result = st.session_state.get("qwen_explainer_result")
+                    if saved_result and saved_result.get("key") == result_key:
+                        st.markdown("#### Explanation")
+                        st.write(saved_result["text"])
+                        if saved_result["fallback_used"]:
+                            st.warning(
+                                "The original analysis finding is shown because a validated "
+                                "model explanation was unavailable."
+                            )
+                            if saved_result.get("detail"):
+                                with st.expander("Fallback details"):
+                                    st.code(saved_result["detail"])
+                        else:
+                            st.success("Explanation passed the configured fidelity checks.")
+            except Exception as exc:
+                st.error(f"Could not prepare the Qwen Explainer: {exc}")
+
         with st.expander("Limitations", expanded=False):
             for limitation in eda_result.limitations:
                 st.markdown(f"- {limitation}")
