@@ -45,7 +45,7 @@ Recorded after Phase 1 completion on 2026-09-07.
 
 ## Increment 3: data-layer cleanup
 
-- Generic document contracts remain in `data/schemas.py`.
+- Generic document contracts remain in `data/loader.py` and `data/schemas.py`.
 - Sinter experiment contracts and CSV mappings are in `departments/blast_furnace/bf_experiment_schema.py`.
 - Document loading supports explicit strict-mode failures for unreadable input.
 - Historical experiment validation reports malformed or incomplete values while retaining source rows.

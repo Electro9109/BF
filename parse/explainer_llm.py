@@ -55,6 +55,7 @@ ADAPTER_PATH = _REPO_ROOT / "parse" / "models" / "qwen3-explainer-v0.3"
 MAX_NEW_TOKENS = 256
 ENABLED_ENV_VAR = "PARSE_EXPLAINER_ENABLED"
 BASE_MODEL_PATH_ENV_VAR = "PARSE_BASE_MODEL_PATH"
+ADAPTER_PATH_ENV_VAR = "PARSE_ADAPTER_PATH"
 
 # ── State ──────────────────────────────────────────────────────────────────────
 
@@ -94,22 +95,41 @@ def is_enabled() -> bool:
     return val not in ("0", "false", "no", "off")
 
 
+def _resolve_adapter_path() -> Path:
+    """Return the adapter directory Path.
+
+    Priority:
+    1. PARSE_ADAPTER_PATH env var (if explicitly set, must exist)
+    2. ADAPTER_PATH constant (default repository location)
+    """
+    custom = os.environ.get(ADAPTER_PATH_ENV_VAR, "").strip()
+    if custom:
+        p = Path(custom)
+        if not p.is_dir():
+            raise FileNotFoundError(
+                f"Configured adapter path {ADAPTER_PATH_ENV_VAR}={custom!r} does not exist or is not a directory."
+            )
+        return p
+    return ADAPTER_PATH
+
+
 def _resolve_base_model_path() -> str:
     """Return the base model path/ID.
 
     Priority:
-    1. PARSE_BASE_MODEL_PATH env var (for air-gapped or local-weights usage)
-    2. BASE_MODEL_ID constant (downloads from / uses HF cache)
+    1. PARSE_BASE_MODEL_PATH env var (for air-gapped or local-weights usage).
+       If explicitly configured, it MUST exist as a directory; does NOT silently
+       fall back to an online model ID to ensure air-gapped reliability.
+    2. BASE_MODEL_ID constant (default model identifier).
     """
     custom = os.environ.get(BASE_MODEL_PATH_ENV_VAR, "").strip()
     if custom:
         p = Path(custom)
-        if p.is_dir():
-            return str(p)
-        logger.warning(
-            "%s=%r is not a directory; falling back to HF model ID %s",
-            BASE_MODEL_PATH_ENV_VAR, custom, BASE_MODEL_ID,
-        )
+        if not p.is_dir():
+            raise FileNotFoundError(
+                f"Configured base model path {BASE_MODEL_PATH_ENV_VAR}={custom!r} does not exist or is not a directory."
+            )
+        return str(p)
     return BASE_MODEL_ID
 
 
@@ -118,17 +138,31 @@ def load_model() -> None:
 
     Safe to call multiple times; subsequent calls are no-ops.
     Raises ImportError if transformers/peft are not installed.
-    Raises FileNotFoundError if the adapter directory is missing.
+    Raises FileNotFoundError if base model or adapter directory is missing.
     """
     global _model, _tokenizer
     if _model is not None:
         return
 
-    if not ADAPTER_PATH.is_dir():
+    # Check configured paths first before checking dependencies
+    # This gives clearer error messages when user explicitly configured a path
+    base_model_path = _resolve_base_model_path()
+    adapter_path = _resolve_adapter_path()
+
+    if not adapter_path.is_dir():
         raise FileNotFoundError(
-            f"LoRA adapter not found at {ADAPTER_PATH}. "
-            "Place the v0.3 adapter files there before loading the model."
+            f"LoRA adapter not found at {adapter_path}. "
+            f"Place the v0.3 adapter files there or configure {ADAPTER_PATH_ENV_VAR}."
         )
+
+    # If base_model_path is a directory (user-configured local path), check it exists
+    # before proceeding with dependency checks
+    if BASE_MODEL_PATH_ENV_VAR in os.environ:
+        base_dir = Path(base_model_path)
+        if not base_dir.is_dir():
+            raise FileNotFoundError(
+                f"Configured base model path {BASE_MODEL_PATH_ENV_VAR}={base_model_path!r} does not exist or is not a directory."
+            )
 
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -146,19 +180,18 @@ def load_model() -> None:
             "Install it with: pip install peft"
         ) from exc
 
-    base_model_path = _resolve_base_model_path()
     logger.info("Loading base model: %s", base_model_path)
 
     # Prefer adapter tokenizer when it ships its own files (e.g. v0.3 adapter
     # includes tokenizer.json + tokenizer_config.json); fall back to the base.
-    adapter_has_tokenizer = (ADAPTER_PATH / "tokenizer_config.json").is_file()
-    tokenizer_source = str(ADAPTER_PATH) if adapter_has_tokenizer else base_model_path
+    adapter_has_tokenizer = (adapter_path / "tokenizer_config.json").is_file()
+    tokenizer_source = str(adapter_path) if adapter_has_tokenizer else base_model_path
     logger.info("Loading tokenizer from: %s", tokenizer_source)
     _tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)
 
     base = AutoModelForCausalLM.from_pretrained(base_model_path)
-    logger.info("Loading LoRA adapter from: %s", ADAPTER_PATH)
-    _model = PeftModel.from_pretrained(base, str(ADAPTER_PATH))
+    logger.info("Loading LoRA adapter from: %s", adapter_path)
+    _model = PeftModel.from_pretrained(base, str(adapter_path))
     _model.eval()
     logger.info("Explainer LLM ready.")
 
@@ -204,18 +237,27 @@ def _generate_raw(
 
 # Checks that trigger fallback if failed.  Advisory checks (like
 # unsupported_novelty) are logged for human review but do not trigger fallback.
-HARD_FIDELITY_CHECKS = {"numerical_fidelity", "causal_language", "limitation_preserved"}
+HARD_FIDELITY_CHECKS = {
+    "numerical_fidelity",
+    "causal_language",
+    "limitation_preserved",
+    "recommendation_fidelity",
+    "metric_semantics",
+}
 
 
-def _validate(record: dict[str, Any], explanation: str) -> tuple[bool, str]:
+def _validate(
+    record: dict[str, Any],
+    explanation: str,
+    recommendation: str | None = None,
+) -> tuple[bool, str]:
     """Run fidelity checks on the explanation.  Returns (passed, detail).
 
-    Only hard checks (numerical fidelity, causal language, limitation preservation)
-    trigger fallback. Advisory checks are logged for audit/review.
+    Only hard checks trigger fallback. Advisory checks are logged for audit/review.
     """
     from eval.fidelity_checks import run_all_checks
 
-    checks = run_all_checks(record, explanation)
+    checks = run_all_checks(record, explanation, recommendation=recommendation)
     failures = [
         f"{name}: {r.detail}"
         for name, r in checks.items()
@@ -297,7 +339,7 @@ def explain(
             finding_id=finding_id,
         )
 
-    passed, detail = _validate(record, generated_text)
+    passed, detail = _validate(record, generated_text, recommendation=recommendation)
     if not passed:
         logger.warning(
             "Fidelity validation failed for %s (%s); using fallback.",

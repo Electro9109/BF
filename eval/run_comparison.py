@@ -94,7 +94,13 @@ def build_generator(model_id: str, adapter_path: str | None = None) -> Callable[
     return _build_generator_fn(model_id, adapter_path)
 
 
-HARD_CHECKS = {"numerical_fidelity", "causal_language", "limitation_preserved"}
+HARD_CHECKS = {
+    "numerical_fidelity",
+    "causal_language",
+    "limitation_preserved",
+    "recommendation_fidelity",
+    "metric_semantics",
+}
 
 
 def score_examples(examples: list[dict], generate: Callable[[dict], str]) -> list[dict]:
@@ -131,6 +137,8 @@ def summarize(results: list[dict]) -> dict:
         "numerical_fidelity",
         "causal_language",
         "limitation_preserved",
+        "recommendation_fidelity",
+        "metric_semantics",
         "unsupported_novelty",
     ):
         if results and check_name in results[0]["checks"]:

@@ -23,11 +23,14 @@ Usage (standalone)
   # {"Ts": 1290, "Tm": 1471, "Tm-Ts": 181}
 """
 
+import logging
 import pickle
 import warnings
 from pathlib import Path
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 import pandas as pd
 
 from departments.blast_furnace.feature_processing import (
@@ -280,12 +283,13 @@ class Predictor:
                 confidence = "medium"
             else:
                 confidence = "low"
-        except Exception:
-            confidence = "medium"
-            dist = 999.0
-            
+        except Exception as exc:
+            logger.warning("Failed to compute nearest neighbor distance for confidence: %s", exc)
+            confidence = "unknown"
+            dist = None
+
         predictions["confidence"] = confidence
-        predictions["distance"] = round(dist, 3)
+        predictions["distance"] = round(dist, 3) if dist is not None else None
         return predictions
 
     def predict_batch(self, df: pd.DataFrame) -> pd.DataFrame:

@@ -12,8 +12,41 @@ Nearest-neighbour utilities for the ML predictor.
       Requires EXPERIMENTS_CSV to be configured; used by hybrid_pipeline.
 """
 
+import logging
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+
+logger = logging.getLogger(__name__)
+
+# Module-level cache for training matrix to avoid per-prediction Excel reload
+_cached_training_matrix = None
+
+
+def _get_cached_training_matrix() -> np.ndarray:
+    """
+    Load and cache the training matrix once to avoid repeated Excel reloads.
+
+    Returns
+    -------
+    np.ndarray : shape (n_samples, n_features), already scaled
+    """
+    global _cached_training_matrix
+    if _cached_training_matrix is None:
+        logger.debug("Loading training matrix from Excel (cached after first call)")
+        from departments.blast_furnace.feature_processing import load_and_build
+        res = load_and_build()
+        _cached_training_matrix = res["X"]
+        logger.debug("Training matrix cached: shape %s", _cached_training_matrix.shape)
+    return _cached_training_matrix
+
+
+def clear_training_matrix_cache() -> None:
+    """
+    Clear the cached training matrix. Useful for testing or when training data changes.
+    """
+    global _cached_training_matrix
+    _cached_training_matrix = None
+    logger.debug("Training matrix cache cleared")
 
 
 def nearest_neighbor_distance(query_scaled: np.ndarray) -> float:
@@ -30,9 +63,7 @@ def nearest_neighbor_distance(query_scaled: np.ndarray) -> float:
     -------
     float  — minimum Euclidean distance; smaller == closer to training data.
     """
-    from departments.blast_furnace.feature_processing import load_and_build
-    res = load_and_build()
-    X = res["X"]   # shape (n_samples, n_features), already scaled
+    X = _get_cached_training_matrix()
     dists = np.linalg.norm(X - query_scaled, axis=1)
     return float(np.min(dists))
 

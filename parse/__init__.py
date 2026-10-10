@@ -27,6 +27,8 @@ from parse.cleaning import (
     CleaningContext,
 )
 from parse.cleaning_context import CleaningPurpose
+from parse.explainer_synthesizer import ExplainerSynthesizer
+from parse.fidelity_evaluator import FidelityEvaluator
 
 __all__ = [
 	"AnalysisBundle",
@@ -48,4 +50,6 @@ __all__ = [
     "HumanDecision",
     "CleaningContext",
     "CleaningPurpose",
+    "ExplainerSynthesizer",
+    "FidelityEvaluator",
 ]

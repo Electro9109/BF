@@ -1,9 +1,13 @@
-# Metallurgical RAG + ML Assistant
+# PARSE — Process, Analysis, Retrieval, Synthesis & Evaluation
 
-A fully-offline prototype combining:
+A modular data and decision-support platform for metallurgical operations and technical analysis.
+
+PARSE provides:
 - 📊 **Data Explorer + Cleaner** — profile CSV/Excel datasets, review quality issues, and apply approved traceable cleaning proposals
 - 🔍 **RAG Chat** — query metallurgical PDF/text documents with a local LLM
 - 🧮 **ML Predictor** — estimate softening (Ts) and melting (Tm, Tm−Ts) temperatures from burden chemistry, gas atmosphere, and burden composition
+- 🤖 **Explainer LLM** — translate structured analysis findings into clear, natural language explanations with fidelity validation
+- 🏗️ **Core Contracts** — reusable Processing, Retrieval, Analysis, Synthesis, and Evaluation protocols for extensible workflows
 
 ---
 
@@ -207,6 +211,48 @@ python -m ml.train
 
 ---
 
+## Explainer LLM
+
+The Explainer translates structured analysis findings into clear, natural language explanations.
+
+### Configuration
+
+- **Base Model:** `Qwen/Qwen3-4B-Instruct-2507` (configurable via `PARSE_BASE_MODEL_PATH`)
+- **Adapter:** LoRA adapter at `parse/models/qwen3-explainer-v0.3`
+- **Enable/Disable:** Set `PARSE_EXPLAINER_ENABLED=0` to force fallback mode
+
+### Fidelity Validation
+
+Every generated explanation is validated against:
+- **Numerical fidelity:** All numbers in the source finding must appear unchanged
+- **Causal language:** Observational findings must not be presented as causal
+- **Limitation preservation:** Statistical caveats must survive translation
+- **Recommendation fidelity:** Tentative recommendations must not be strengthened to mandatory
+
+If validation fails, the system returns the original finding message as a deterministic fallback.
+
+### Usage
+
+```python
+from parse import ExplainerSynthesizer, FidelityEvaluator, AnalysisOrchestrator, AnalysisRequest
+from parse.core.contracts import SourceRef
+
+# Run analysis
+source = SourceRef("test", "user_input")
+request = AnalysisRequest(dataset, source)
+analysis = AnalysisOrchestrator().analyze(request)
+
+# Generate explanations
+synthesizer = ExplainerSynthesizer()
+synthesis = synthesizer.synthesize(evidence=None, analyses=[analysis])
+
+# Validate fidelity
+evaluator = FidelityEvaluator()
+evaluation = evaluator.evaluate(target=synthesis, analyses=[analysis])
+```
+
+---
+
 ## Predictor Features
 
 | Feature | Description |
@@ -247,6 +293,15 @@ python -m ml.train
 │   ├── predictor.py              Single-sample & batch prediction; confidence scoring
 │   ├── similarity.py             Nearest-neighbour distance for confidence estimation
 │   └── train.py                  RandomizedSearchCV training; per-target model selection
+├── parse/                        PARSE Core: domain-agnostic analysis and synthesis
+│   ├── analysis.py               AnalysisOrchestrator, Finding, AttributeProfile
+│   ├── cleaning.py               DataCleaner, cleaning proposals
+│   ├── explainer_llm.py          Qwen Explainer model loader and inference
+│   ├── explainer_adapter.py      Converts findings to Explainer record format
+│   ├── explainer_synthesizer.py  Synthesizer protocol implementation
+│   ├── fidelity_evaluator.py     Evaluator protocol implementation
+│   ├── core/                     Core contracts and operation protocols
+│   └── semantic_analysis.py      Relevance and interpretation layer
 ├── pipeline/
 │   ├── prediction_pipeline.py    Orchestrates feature build → predict → summary
 │   └── rag_pipeline.py           RAG retrieval + LLM answer generation

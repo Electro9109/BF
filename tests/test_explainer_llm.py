@@ -23,10 +23,12 @@ import pytest
 import parse.explainer_llm as llm_module
 from parse.explainer_llm import (
     ADAPTER_PATH,
+    ADAPTER_PATH_ENV_VAR,
     BASE_MODEL_ID,
     BASE_MODEL_PATH_ENV_VAR,
     ENABLED_ENV_VAR,
     ExplainerResult,
+    _resolve_adapter_path,
     _resolve_base_model_path,
     explain,
     is_enabled,
@@ -257,10 +259,33 @@ def test_resolve_base_model_path_custom_dir(monkeypatch, tmp_path):
     assert _resolve_base_model_path() == str(custom_dir)
 
 
-def test_resolve_base_model_path_invalid_falls_back(monkeypatch, tmp_path):
+def test_resolve_base_model_path_invalid_raises_error(monkeypatch, tmp_path):
     nonexistent = tmp_path / "does_not_exist"
     monkeypatch.setenv(BASE_MODEL_PATH_ENV_VAR, str(nonexistent))
-    assert _resolve_base_model_path() == BASE_MODEL_ID
+    with pytest.raises(FileNotFoundError, match="does not exist or is not a directory"):
+        _resolve_base_model_path()
+
+
+# ── Adapter path resolution ────────────────────────────────────────────────────
+
+
+def test_resolve_adapter_path_default(monkeypatch):
+    monkeypatch.delenv(ADAPTER_PATH_ENV_VAR, raising=False)
+    assert _resolve_adapter_path() == ADAPTER_PATH
+
+
+def test_resolve_adapter_path_custom_dir(monkeypatch, tmp_path):
+    custom_dir = tmp_path / "custom_adapter"
+    custom_dir.mkdir()
+    monkeypatch.setenv(ADAPTER_PATH_ENV_VAR, str(custom_dir))
+    assert _resolve_adapter_path() == custom_dir
+
+
+def test_resolve_adapter_path_invalid_raises_error(monkeypatch, tmp_path):
+    nonexistent = tmp_path / "missing_adapter"
+    monkeypatch.setenv(ADAPTER_PATH_ENV_VAR, str(nonexistent))
+    with pytest.raises(FileNotFoundError, match="does not exist or is not a directory"):
+        _resolve_adapter_path()
 
 
 # ── Advisory check behavior in _validate ───────────────────────────────────────
@@ -283,4 +308,65 @@ def test_advisory_check_does_not_trigger_fallback(monkeypatch, outlier_record):
 
     assert result.fallback_used is False
     assert result.text == novel_output
+
+
+# ── Recommendation fidelity integration in explain() ──────────────────────────
+
+
+def test_explain_uses_fallback_when_recommendation_strength_violated(monkeypatch, outlier_record):
+    """Model strengthening 'consider removing' into 'must remove' triggers fallback."""
+    monkeypatch.delenv(ENABLED_ENV_VAR, raising=False)
+    _mock_model_and_tokenizer(llm_module)
+
+    # Output attempts to convert tentative recommendation into mandatory command
+    violated_output = (
+        "Column 'measurement' contains 3 IQR-based statistical outliers. "
+        "A statistical outlier is not automatically a data error. "
+        "You must remove column measurement immediately."
+    )
+
+    with patch.object(llm_module, "_generate_raw", return_value=(violated_output, 50, 25)):
+        result = explain(outlier_record, recommendation="Consider removing column measurement.")
+
+    assert result.fallback_used is True
+    assert result.text == outlier_record["message"]
+    assert "strength violation" in result.validation_detail
+
+
+def test_explain_passes_when_recommendation_faithfully_preserved(monkeypatch, outlier_record):
+    """Model faithfully preserving tentative recommendation is accepted."""
+    monkeypatch.delenv(ENABLED_ENV_VAR, raising=False)
+    _mock_model_and_tokenizer(llm_module)
+
+    good_output = (
+        "The 'measurement' column contains 3 statistical outliers (IQR-based). "
+        "A statistical outlier is not automatically a data error. "
+        "Consider removing column measurement if confirmed to be artifacts."
+    )
+
+    with patch.object(llm_module, "_generate_raw", return_value=(good_output, 60, 35)):
+        result = explain(outlier_record, recommendation="Consider removing column measurement.")
+
+    assert result.fallback_used is False
+    assert result.text == good_output
+
+
+def test_explain_returns_fallback_when_configured_base_model_path_invalid(monkeypatch, tmp_path, outlier_record):
+    """Configuring a non-existent base model path produces clear fallback with no network request."""
+    monkeypatch.delenv(ENABLED_ENV_VAR, raising=False)
+    monkeypatch.setenv(BASE_MODEL_PATH_ENV_VAR, str(tmp_path / "nonexistent_model"))
+    result = explain(outlier_record)
+    assert result.fallback_used is True
+    # Error message should mention the configured path does not exist
+    assert "does not exist" in result.validation_detail.lower() or "nonexistent_model" in result.validation_detail.lower()
+
+
+def test_explain_returns_fallback_when_configured_adapter_path_invalid(monkeypatch, tmp_path, outlier_record):
+    """Configuring a non-existent adapter path produces clear fallback."""
+    monkeypatch.delenv(ENABLED_ENV_VAR, raising=False)
+    monkeypatch.setenv(ADAPTER_PATH_ENV_VAR, str(tmp_path / "nonexistent_adapter"))
+    result = explain(outlier_record)
+    assert result.fallback_used is True
+    assert "nonexistent_adapter" in result.validation_detail
+
 

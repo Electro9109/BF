@@ -372,7 +372,7 @@ def _simplify_attribute_row(row: dict) -> dict:
     Shows: name, type, key stats (missing%, unique count), and summary.
     Full detail available via expander.
     """
-    col_type = row.get("observed_type") or row.get("inferred_type") or row.get("type", "N/A")
+    col_type = row.get("observed_type", row.get("inferred_type", row.get("type", "N/A")))
     missing_pct = row.get("missing_rate", row.get("missing_fraction", 0))
     summary_text = ""
     if "summary" in row and row["summary"]:
@@ -405,9 +405,9 @@ def _simplify_finding_row(row: dict) -> dict:
     Shows: category/kind, observation/message (plain-language), evidence count.
     Full detail available via expander.
     """
-    evidence_count = len(row.get("evidence", [])) if isinstance(row.get("evidence"), list) else 0
-    finding_type = row.get("category") or row.get("kind", "N/A")
-    finding_msg = row.get("observation") or row.get("message", "N/A")
+    evidence_count = len(row.get("evidence", [])) if isinstance(row.get("evidence"), (list, tuple)) else 0
+    finding_type = row.get("category", row.get("kind", "N/A"))
+    finding_msg = row.get("observation", row.get("message", "N/A"))
     return {
         "Type": finding_type,
         "Finding": finding_msg,

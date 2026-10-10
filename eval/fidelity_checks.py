@@ -180,6 +180,7 @@ def unsupported_novelty(
     attributes: dict,
     limitations: tuple,
     explanation: str,
+    recommendation: str | None = None,
     max_novel_ratio: float = 0.45,
 ) -> FidelityResult:
     """Flag explanations that introduce substantial novel vocabulary.
@@ -199,6 +200,8 @@ def unsupported_novelty(
         source_parts.append(str(v))
     for lim in limitations:
         source_parts.append(str(lim))
+    if recommendation:
+        source_parts.append(str(recommendation))
     source_text = " ".join(source_parts)
 
     source_tokens = _tokenize(source_text) | _NOVELTY_STOPWORDS
@@ -224,16 +227,134 @@ def unsupported_novelty(
     )
 
 
-def run_all_checks(finding: dict, explanation: str) -> dict[str, FidelityResult]:
-    """Run all checks against a finding dict (as produced by
-    build_parse_eval_set.py) and a model-generated explanation.
+_TENTATIVE_RECOMMENDATION_MARKERS = (
+    "consider", "suggest", "potential", "optional", "evaluate",
+    "investigate", "might want to", "may want to", "candidacy",
+)
+_MANDATORY_RECOMMENDATION_MARKERS = (
+    "must", "mandatory", "required", "imperative", "obligation",
+    "immediately remove", "immediately delete",
+)
+_UNSOLICITED_ACTION_PATTERNS = [
+    re.compile(r"\b(?:you|we)\s+must\s+(?:remove|delete|drop|change|clean)\b", re.IGNORECASE),
+    re.compile(r"\b(?:action\s+required|mandatory\s+action)\b", re.IGNORECASE),
+    re.compile(r"\bmust\s+be\s+(?:removed|deleted|dropped)\b", re.IGNORECASE),
+]
+_IMPERATIVE_COMMAND_PATTERNS = [
+    re.compile(r"\b(?:remove|delete|drop)\s+(?:the\s+)?(?:column|attribute|field|feature)\b", re.IGNORECASE),
+]
 
-    The first three checks (numerical_fidelity, causal_language,
-    limitation_preserved) are hard gates -- failures trigger fallback.
 
-    unsupported_novelty is a soft advisory check -- it flags output for
-    human review but does not trigger fallback on its own.
+def recommendation_fidelity(
+    recommendation: str | None,
+    explanation: str,
+) -> FidelityResult:
+    """Check that recommendation intent and strength are preserved accurately.
+
+    - If a recommendation was provided:
+        * Tentative recommendations ('consider removing') must NOT be strengthened
+          into mandatory commands ('must remove', 'remove column').
+        * The key recommendation intent/subject must appear in the explanation.
+    - If no recommendation was provided:
+        * The explanation must NOT invent unsolicited mandatory recommendations or
+          unsupported imperative actions.
     """
+    explanation_lower = explanation.lower()
+
+    if recommendation is None or not recommendation.strip():
+        for pat in _UNSOLICITED_ACTION_PATTERNS:
+            if pat.search(explanation):
+                return FidelityResult(
+                    False,
+                    "Explanation introduced unsolicited imperative action when no recommendation was supplied.",
+                )
+        return FidelityResult(True, "No recommendation was supplied and none was invented.")
+
+    rec_clean = recommendation.strip()
+    rec_lower = rec_clean.lower()
+
+    # Check strength preservation
+    is_tentative = any(m in rec_lower for m in _TENTATIVE_RECOMMENDATION_MARKERS)
+    has_mandatory_source = any(m in rec_lower for m in _MANDATORY_RECOMMENDATION_MARKERS)
+
+    if is_tentative and not has_mandatory_source:
+        for m in _MANDATORY_RECOMMENDATION_MARKERS:
+            if re.search(r"\b" + re.escape(m) + r"\b", explanation_lower):
+                return FidelityResult(
+                    False,
+                    f"Recommendation strength violation: tentative recommendation {rec_clean!r} "
+                    f"strengthened into mandatory language ('{m}') in explanation.",
+                )
+        for pat in _IMPERATIVE_COMMAND_PATTERNS:
+            if pat.search(explanation) and not any(m in explanation_lower for m in _TENTATIVE_RECOMMENDATION_MARKERS):
+                return FidelityResult(
+                    False,
+                    f"Recommendation strength violation: tentative recommendation {rec_clean!r} "
+                    f"converted into imperative command without tentative framing.",
+                )
+
+    # Check intent preservation: key non-stopword tokens from recommendation should survive
+    rec_tokens = (_tokenize(rec_clean) - _NOVELTY_STOPWORDS) - {
+        "consider", "suggest", "potential", "optional", "investigate", "evaluate",
+    }
+    if rec_tokens:
+        exp_tokens = _tokenize(explanation)
+        overlap = rec_tokens & exp_tokens
+        if not overlap:
+            return FidelityResult(
+                False,
+                f"Recommendation intent not reflected in explanation: none of {sorted(rec_tokens)} found.",
+            )
+
+    return FidelityResult(True, "Recommendation intent and strength preserved.")
+
+
+def metric_semantics_check(source_message: str, explanation: str) -> FidelityResult:
+    """Verify that statistical metrics are not conflated or misrepresented.
+
+    - IQR (Interquartile Range) must not be called 'the range' or spread between min and max.
+    - Quartiles (Q1, Q3) must not be called 'the median'.
+    """
+    source_lower = source_message.lower()
+    exp_lower = explanation.lower()
+
+    # IQR vs Range
+    has_iqr_source = "iqr" in source_lower or "interquartile" in source_lower
+    has_range_source = "range" in source_lower
+
+    if has_iqr_source and not has_range_source:
+        if re.search(r"\b(?:the\s+range|full\s+range|range\s+of\s+values|overall\s+range)\b", exp_lower):
+            return FidelityResult(
+                False,
+                "Metric semantics violation: Interquartile Range (IQR) was conflated with statistical range.",
+            )
+
+    # Quartiles vs Median
+    has_quartile_source = "quartile" in source_lower or "q1" in source_lower or "q3" in source_lower
+    has_median_source = "median" in source_lower
+
+    if has_quartile_source and not has_median_source:
+        if re.search(r"\b(?:the\s+median|median\s+value)\b", exp_lower):
+            return FidelityResult(
+                False,
+                "Metric semantics violation: Quartile was conflated with median.",
+            )
+
+    return FidelityResult(True, "Metric semantics preserved.")
+
+
+def run_all_checks(
+    finding: dict,
+    explanation: str,
+    recommendation: str | None = None,
+) -> dict[str, FidelityResult]:
+    """Run all checks against a finding dict and explanation.
+
+    Hard checks (numerical_fidelity, causal_language, limitation_preserved,
+    recommendation_fidelity, metric_semantics) are gates that trigger fallback.
+    unsupported_novelty is a soft advisory check for review.
+    """
+    rec = recommendation or finding.get("recommendation")
     return {
         "numerical_fidelity": numerical_fidelity(
             finding["message"], finding.get("attributes", {}), explanation
@@ -244,10 +365,13 @@ def run_all_checks(finding: dict, explanation: str) -> dict[str, FidelityResult]
         "limitation_preserved": limitation_preserved(
             tuple(finding.get("limitations", ())), explanation
         ),
+        "recommendation_fidelity": recommendation_fidelity(rec, explanation),
+        "metric_semantics": metric_semantics_check(finding["message"], explanation),
         "unsupported_novelty": unsupported_novelty(
             finding["message"],
             finding.get("attributes", {}),
             tuple(finding.get("limitations", ())),
             explanation,
+            recommendation=rec,
         ),
     }

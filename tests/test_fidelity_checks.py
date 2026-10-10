@@ -8,6 +8,8 @@ from eval.fidelity_checks import (
     causal_language_check,
     limitation_preserved,
     unsupported_novelty,
+    recommendation_fidelity,
+    metric_semantics_check,
     run_all_checks,
 )
 
@@ -160,6 +162,82 @@ def test_unsupported_novelty_handles_empty_explanation():
     assert result.passed
 
 
+# ── recommendation_fidelity ──────────────────────────────────────────────
+
+def test_recommendation_fidelity_passes_when_none_supplied_and_none_invented():
+    result = recommendation_fidelity(None, "The x column has 3 statistical outliers.")
+    assert result.passed
+
+
+def test_recommendation_fidelity_fails_when_unsolicited_action_invented():
+    result = recommendation_fidelity(None, "The x column has 3 statistical outliers. You must remove this column.")
+    assert not result.passed
+    assert "unsolicited" in result.detail
+
+
+def test_recommendation_fidelity_passes_when_tentative_recommendation_preserved():
+    result = recommendation_fidelity(
+        "Consider removing column 'x'.",
+        "The x column has 3 outliers. Consider removing this column from analysis.",
+    )
+    assert result.passed
+
+
+def test_recommendation_fidelity_fails_when_tentative_strengthened_to_must():
+    result = recommendation_fidelity(
+        "Consider removing column 'x'.",
+        "The x column has 3 outliers. You must remove column x from the dataset.",
+    )
+    assert not result.passed
+    assert "strength violation" in result.detail
+
+
+def test_recommendation_fidelity_fails_when_tentative_strengthened_to_bare_imperative():
+    result = recommendation_fidelity(
+        "Consider removing column 'x'.",
+        "The x column has 3 outliers. Remove column x.",
+    )
+    assert not result.passed
+    assert "strength violation" in result.detail
+
+
+def test_recommendation_fidelity_fails_when_intent_omitted():
+    result = recommendation_fidelity(
+        "Investigate potential sensor malfunction on tuyere_5.",
+        "The blast furnace operation shows steady baseline values.",
+    )
+    assert not result.passed
+    assert "intent not reflected" in result.detail
+
+
+# ── metric_semantics_check ────────────────────────────────────────────────
+
+def test_metric_semantics_passes_when_accurate():
+    result = metric_semantics_check(
+        "Column 'temp' contains 3 IQR-based outliers.",
+        "The temp column has 3 statistical outliers identified using IQR.",
+    )
+    assert result.passed
+
+
+def test_metric_semantics_fails_when_iqr_called_the_range():
+    result = metric_semantics_check(
+        "Column 'temp' contains 3 IQR-based statistical outliers.",
+        "The temp column values fall outside the range.",
+    )
+    assert not result.passed
+    assert "Interquartile Range (IQR)" in result.detail
+
+
+def test_metric_semantics_fails_when_quartile_called_median():
+    result = metric_semantics_check(
+        "The Q1 quartile threshold is 45.2.",
+        "The median value of the column is 45.2.",
+    )
+    assert not result.passed
+    assert "Quartile was conflated with median" in result.detail
+
+
 # ── run_all_checks ───────────────────────────────────────────────────────
 
 def test_run_all_checks_returns_all_expected():
@@ -168,16 +246,20 @@ def test_run_all_checks_returns_all_expected():
         "attributes": {"column": "x", "count": 3},
         "limitations": ["A statistical outlier is not automatically a data error."],
         "kind": "observation",
+        "recommendation": "Consider reviewing the data collection process.",
     }
     explanation = (
-        "The x column has 3 unusual values that stand out statistically. "
-        "That doesn't automatically mean there's an error in the data."
+        "The x column has 3 unusual values that stand out statistically (IQR-based). "
+        "That doesn't automatically mean there's an error in the data. "
+        "Consider reviewing the data collection process."
     )
     results = run_all_checks(finding, explanation)
     assert set(results.keys()) == {
         "numerical_fidelity",
         "causal_language",
         "limitation_preserved",
+        "recommendation_fidelity",
+        "metric_semantics",
         "unsupported_novelty",
     }
     assert all(r.passed for r in results.values())
