@@ -330,6 +330,9 @@ def init_session():
         "analysis_context":   None,
         "cleaning_result":    None,
         "eda_working_dataset": "original_upload",
+        "explainer_result":   None,
+        "explainer_finding_key": "",
+        "explainer_recommendation": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1160,6 +1163,77 @@ with tab_eda:
                 st.dataframe(pd.DataFrame(finding_rows), use_container_width=True, hide_index=True)
             else:
                 st.success("No findings were generated for this dataset.")
+
+        with st.expander("Qwen Explainer", expanded=False):
+            if not eda_result.findings:
+                st.info("No findings are available to explain yet.")
+            else:
+                finding_options = {f"{finding.finding_id}: {finding.observation}": finding for finding in eda_result.findings}
+                default_key = next(iter(finding_options)) if finding_options else ""
+                selected_key = st.selectbox(
+                    "Select a finding",
+                    options=list(finding_options.keys()),
+                    index=list(finding_options.keys()).index(st.session_state.get("explainer_finding_key", default_key)) if st.session_state.get("explainer_finding_key") in finding_options else 0,
+                    key="explainer_finding_key",
+                )
+                selected_finding = finding_options[selected_key]
+                recommendation = st.text_area(
+                    "Recommendation (optional)",
+                    value=st.session_state.get("explainer_recommendation", ""),
+                    help="Pass an existing recommendation separately; do not invent one.",
+                    key="explainer_recommendation",
+                )
+
+                if st.button("Generate explanation", key="generate_explainer", type="primary"):
+                    from parse.explainer_adapter import finding_to_explainer_example
+                    from parse.explainer_llm import is_enabled
+                    from parse.explainer_synthesizer import ExplainerSynthesizer
+                    from parse.fidelity_evaluator import FidelityEvaluator
+
+                    recommendation_text = recommendation.strip() or None
+                    synthesizer = ExplainerSynthesizer()
+                    synthesis = synthesizer.synthesize_finding(
+                        selected_finding,
+                        recommendation=recommendation_text,
+                        evidence=None,
+                    )
+                    validation_analyses = [analysis_bundle.eda] if analysis_bundle is not None else [eda_result]
+                    evaluator = FidelityEvaluator()
+                    evaluation = evaluator.evaluate(
+                        target=synthesis,
+                        analyses=validation_analyses,
+                        criteria=[
+                            "numerical_fidelity",
+                            "causal_language",
+                            "limitation_preserved",
+                            "recommendation_fidelity",
+                            "metric_semantics",
+                        ],
+                    )
+                    fallback_message = finding_to_explainer_example(selected_finding)["message"]
+                    st.session_state.explainer_result = {
+                        "finding_id": selected_finding.finding_id,
+                        "recommendation": recommendation_text,
+                        "content": synthesis.content,
+                        "evaluation": evaluation,
+                        "fallback": not is_enabled() or synthesis.content.strip() in {selected_finding.observation.strip(), fallback_message.strip()} or not evaluation.metrics.get("passed", False),
+                    }
+
+                explainer_result = st.session_state.get("explainer_result")
+                if explainer_result and explainer_result.get("finding_id") == selected_finding.finding_id:
+                    evaluation = explainer_result.get("evaluation")
+                    metrics = evaluation.metrics if evaluation is not None else {}
+                    used_fallback = bool(explainer_result.get("fallback"))
+                    if used_fallback:
+                        st.warning("Fallback used: original finding retained because the explainer is disabled, unavailable, or validation failed.")
+                    else:
+                        st.success("Validated explanation generated from the selected finding.")
+                    st.markdown("**Explanation**")
+                    st.write(explainer_result["content"])
+                    if evaluation is not None:
+                        st.caption(evaluation.interpretation or "No evaluation details available.")
+                else:
+                    st.info("Select a finding and generate an explanation to view the validated output or fallback.")
 
         with st.expander("Limitations", expanded=False):
             for limitation in eda_result.limitations:

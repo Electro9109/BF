@@ -48,6 +48,60 @@ class ExplainerSynthesizer:
     - Preserves all evidence references from the input analysis
     """
 
+    def synthesize_finding(
+        self,
+        finding: Any,
+        recommendation: str | None = None,
+        evidence: Any = None,
+        **context: Any,
+    ) -> SynthesisResult:
+        """Explain a single Finding while reusing the existing synthesizer pipeline.
+
+        This keeps the UI and any single-finding callers on the same contract as the
+        broader analysis pipeline without inventing new architecture.
+        """
+        import pandas as pd
+
+        if finding is None:
+            return SynthesisResult(
+                result_id=f"synthesis_missing_{id(context)}",
+                content="No finding selected for explanation.",
+                evidence_refs=[],
+                analysis_refs=[],
+                method="ExplainerSynthesizer",
+                provenance=Provenance(
+                    sources=[SourceRef("explainer_synthesizer", "model")],
+                    operation="synthesize",
+                    method="ExplainerSynthesizer",
+                ),
+                issues=[],
+                limitations=["No finding was available to explain."],
+            )
+
+        source = SourceRef("ui_explainer", "generated_output", label="Selected finding")
+        synthetic_request = AnalysisRequest(
+            dataset=pd.DataFrame({"finding": [str(getattr(finding, "observation", str(finding)))]}),
+            source=source,
+        )
+        synthetic_analysis = type(
+            "SyntheticSingleFindingAnalysis",
+            (),
+            {
+                "result_id": f"analysis_{id(finding)}",
+                "request": synthetic_request,
+                "findings": [finding],
+                "provenance": Provenance(
+                    sources=[source],
+                    operation="synthesize_single_finding",
+                    method="ExplainerSynthesizer",
+                ),
+            },
+        )()
+        context = dict(context)
+        if recommendation is not None:
+            context["recommendation"] = recommendation
+        return self.synthesize(evidence=evidence, analyses=[synthetic_analysis], **context)
+
     def __init__(self, enabled: bool = True):
         """Initialize the synthesizer.
 
