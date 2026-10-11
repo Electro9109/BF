@@ -15,7 +15,8 @@ import pandas as pd
 import pytest
 
 from parse import AnalysisOrchestrator, AnalysisRequest, ExplainerSynthesizer, FidelityEvaluator
-from parse.core.contracts import SourceRef
+from parse.core.contracts import SourceRef, SynthesisResult, EvidenceRef, Provenance
+from parse.explainer_adapter import finding_to_explainer_example
 from parse.explainer_llm import ExplainerResult
 
 
@@ -162,8 +163,9 @@ def test_fidelity_evaluator_with_no_source_findings(sample_dataset):
     assert "no source findings" in evaluation.interpretation.lower()
 
 
-def test_explainer_synthesizer_single_finding_forwards_recommendation(sample_dataset):
+def test_explainer_synthesizer_single_finding_forwards_recommendation(sample_dataset, monkeypatch):
     """The single-finding explainer path must preserve the recommendation passed separately."""
+    monkeypatch.delenv("PARSE_EXPLAINER_ENABLED", raising=False)
     source = SourceRef("test_single_finding", "user_input")
     request = AnalysisRequest(sample_dataset, source)
     orchestrator = AnalysisOrchestrator()
@@ -178,8 +180,9 @@ def test_explainer_synthesizer_single_finding_forwards_recommendation(sample_dat
     assert mock_explain.call_args.kwargs["recommendation"] == "Consider removing batch_id."
 
 
-def test_explainer_synthesizer_single_finding_uses_fallback_when_disabled(sample_dataset):
+def test_explainer_synthesizer_single_finding_uses_fallback_when_disabled(sample_dataset, monkeypatch):
     """Single-finding calls must keep the original finding when the explainer is disabled."""
+    monkeypatch.setenv("PARSE_EXPLAINER_ENABLED", "0")
     source = SourceRef("test_single_fallback", "user_input")
     request = AnalysisRequest(sample_dataset, source)
     orchestrator = AnalysisOrchestrator()
@@ -188,7 +191,6 @@ def test_explainer_synthesizer_single_finding_uses_fallback_when_disabled(sample
 
     from parse.explainer_adapter import finding_to_explainer_example
 
-    os.environ["PARSE_EXPLAINER_ENABLED"] = "0"
     synthesizer = ExplainerSynthesizer()
     synthesis = synthesizer.synthesize_finding(finding, recommendation="Consider removing batch_id.")
 

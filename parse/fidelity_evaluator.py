@@ -78,6 +78,7 @@ class FidelityEvaluator:
 
         synthesis = target
         analyses = context.get("analyses", [])
+        selected_record = context.get("record")
 
         # Extract findings from analyses for fidelity comparison
         all_findings = []
@@ -119,6 +120,15 @@ class FidelityEvaluator:
         )
         explainer_records = eda_result_to_explainer_examples(synthetic_eda)
 
+        if isinstance(selected_record, dict):
+            selected_fid = selected_record.get("finding_id")
+            if selected_fid:
+                explainer_records = [record for record in explainer_records if record.get("finding_id") == selected_fid]
+        elif getattr(synthesis, "finding_id", ""):
+            explainer_records = [
+                record for record in explainer_records if record.get("finding_id") == synthesis.finding_id
+            ]
+
         # Run fidelity checks
         from eval.fidelity_checks import run_all_checks
 
@@ -145,6 +155,8 @@ class FidelityEvaluator:
                     }
 
         all_passed = total_checks > 0 and passed_checks == total_checks
+        synthesis.status = "validated" if all_passed else "fallback"
+        synthesis.validation_passed = bool(all_passed)
 
         interpretation = (
             f"All {total_checks} fidelity checks passed."

@@ -296,6 +296,10 @@ class SynthesisResult:
     provenance: Provenance
     issues: list[Issue] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
+    status: str = "generated"
+    validation_passed: bool = False
+    finding_id: str = ""
+    model_generated: bool = False
 
     def __post_init__(self) -> None:
         _require_text(self.result_id, "result_id")
@@ -305,6 +309,10 @@ class SynthesisResult:
         self.analysis_refs = list(self.analysis_refs)
         self.issues = list(self.issues)
         self.limitations = list(self.limitations)
+        self.status = str(self.status or "generated").strip() or "generated"
+        self.finding_id = "" if self.finding_id is None else str(self.finding_id)
+        self.model_generated = bool(self.model_generated)
+        self.validation_passed = bool(self.validation_passed)
         if not isinstance(self.provenance, Provenance):
             raise TypeError("provenance must be a Provenance")
         all_refs = self.evidence_refs + self.analysis_refs

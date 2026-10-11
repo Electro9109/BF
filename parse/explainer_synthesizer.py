@@ -29,7 +29,7 @@ from parse.core.contracts import (
 )
 from parse.core.operations import Synthesizer
 from parse.explainer_adapter import eda_result_to_explainer_examples
-from parse.explainer_llm import explain, ExplainerResult
+from parse.explainer_llm import explain, ExplainerResult, is_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,8 @@ class ExplainerSynthesizer:
         """
         import pandas as pd
 
+        finding_id = getattr(finding, "finding_id", "") if finding is not None else ""
+
         if finding is None:
             return SynthesisResult(
                 result_id=f"synthesis_missing_{id(context)}",
@@ -76,6 +78,33 @@ class ExplainerSynthesizer:
                 ),
                 issues=[],
                 limitations=["No finding was available to explain."],
+                status="fallback",
+                validation_passed=False,
+                finding_id=finding_id,
+                model_generated=False,
+            )
+
+        if not self.is_enabled():
+            from parse.explainer_adapter import finding_to_explainer_example
+
+            fallback_text = finding_to_explainer_example(finding)["message"]
+            return SynthesisResult(
+                result_id=f"synthesis_{id(finding)}",
+                content=fallback_text,
+                evidence_refs=[],
+                analysis_refs=[EvidenceRef(ref_id=f"analysis_{id(finding)}", relation="derived_from")],
+                method="ExplainerSynthesizer",
+                provenance=Provenance(
+                    sources=[SourceRef("ui_explainer", "generated_output", label="Selected finding")],
+                    operation="synthesize_single_finding",
+                    method="ExplainerSynthesizer",
+                ),
+                issues=[],
+                limitations=["Explainer disabled via constructor or environment setting."],
+                status="fallback",
+                validation_passed=False,
+                finding_id=finding_id,
+                model_generated=False,
             )
 
         source = SourceRef("ui_explainer", "generated_output", label="Selected finding")
@@ -102,16 +131,22 @@ class ExplainerSynthesizer:
             context["recommendation"] = recommendation
         return self.synthesize(evidence=evidence, analyses=[synthetic_analysis], **context)
 
-    def __init__(self, enabled: bool = True):
+    def __init__(self, enabled: bool | None = None):
         """Initialize the synthesizer.
 
         Parameters
         ----------
-        enabled : bool
+        enabled : bool | None
             If False, force fallback mode without loading model weights.
-            Can be overridden by PARSE_EXPLAINER_ENABLED environment variable.
+            If None, the PARSE_EXPLAINER_ENABLED environment variable decides.
         """
         self._enabled = enabled
+
+    def is_enabled(self) -> bool:
+        """True only when explicit constructor state and env settings allow inference."""
+        if self._enabled is not None:
+            return bool(self._enabled)
+        return is_enabled()
 
     def synthesize(
         self,
@@ -138,11 +173,11 @@ class ExplainerSynthesizer:
         """
         import uuid
 
-        result_id = f"synthesis_{uuid.uuid4().hex[:8]}"
+        synthesis_result_id = f"synthesis_{uuid.uuid4().hex[:8]}"
 
         if not analyses:
             return SynthesisResult(
-                result_id=result_id,
+                result_id=synthesis_result_id,
                 content="No analysis results provided for explanation.",
                 evidence_refs=[],
                 analysis_refs=[],
@@ -154,6 +189,9 @@ class ExplainerSynthesizer:
                 ),
                 issues=[],
                 limitations=["No analysis input to synthesize."],
+                status="fallback",
+                validation_passed=False,
+                model_generated=False,
             )
 
         # Collect all findings from all analysis results
@@ -163,22 +201,20 @@ class ExplainerSynthesizer:
             # Extract findings from AnalysisResult if it follows the EDA pattern
             if hasattr(analysis, "findings"):
                 all_findings.extend(analysis.findings)
-            # Track evidence references
-            result_id = getattr(analysis, "result_id", None)
-            if result_id is None and hasattr(analysis, "request"):
-                result_id = f"analysis_{id(analysis)}"
-            analysis_refs.extend(
-                [
-                    EvidenceRef(
-                        ref_id=result_id or f"analysis_{id(analysis)}",
-                        relation="derived_from",
-                    )
-                ]
+            # Track evidence references without overwriting the synthesis result id
+            analysis_result_id = getattr(analysis, "result_id", None)
+            if analysis_result_id is None and hasattr(analysis, "request"):
+                analysis_result_id = f"analysis_{id(analysis)}"
+            analysis_refs.append(
+                EvidenceRef(
+                    ref_id=analysis_result_id or f"analysis_{id(analysis)}",
+                    relation="derived_from",
+                )
             )
 
         if not all_findings:
             return SynthesisResult(
-                result_id=result_id,
+                result_id=synthesis_result_id,
                 content="Analysis provided but contains no findings to explain.",
                 evidence_refs=[],
                 analysis_refs=analysis_refs,
@@ -190,6 +226,9 @@ class ExplainerSynthesizer:
                 ),
                 issues=[],
                 limitations=["No findings in analysis results."],
+                status="fallback",
+                validation_passed=False,
+                model_generated=False,
             )
 
         # Convert findings to Explainer records
@@ -236,6 +275,27 @@ class ExplainerSynthesizer:
                 limitations=["Analysis result does not contain EDAResult-compatible findings."],
             )
 
+        if not self.is_enabled():
+            fallback_content = "\n\n".join(record["message"] for record in explainer_records)
+            return SynthesisResult(
+                result_id=synthesis_result_id,
+                content=fallback_content,
+                evidence_refs=[],
+                analysis_refs=analysis_refs,
+                method="ExplainerSynthesizer",
+                issues=[],
+                limitations=["Explainer is disabled by configuration."],
+                provenance=Provenance(
+                    sources=[SourceRef("explainer_llm", "model", label="Qwen Explainer")],
+                    operation="synthesize",
+                    method="ExplainerSynthesizer",
+                ),
+                status="fallback",
+                validation_passed=False,
+                finding_id=explainer_records[0].get("finding_id", "") if explainer_records else "",
+                model_generated=False,
+            )
+
         # Explain each finding and collect results
         explanations = []
         issues = []
@@ -267,8 +327,9 @@ class ExplainerSynthesizer:
             method="ExplainerSynthesizer",
         )
 
+        validation_passed = not fallback_used
         return SynthesisResult(
-            result_id=result_id,
+            result_id=synthesis_result_id,
             content=combined_content,
             evidence_refs=[],
             analysis_refs=analysis_refs,
@@ -276,4 +337,8 @@ class ExplainerSynthesizer:
             issues=issues,
             limitations=limitations,
             provenance=provenance,
+            status="validated" if validation_passed else "fallback",
+            validation_passed=validation_passed,
+            finding_id=explainer_records[0].get("finding_id", "") if explainer_records else "",
+            model_generated=not fallback_used,
         )
