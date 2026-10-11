@@ -79,6 +79,7 @@ class FidelityEvaluator:
         synthesis = target
         analyses = context.get("analyses", [])
         selected_record = context.get("record")
+        recommendation = context.get("recommendation")
 
         # Extract findings from analyses for fidelity comparison
         all_findings = []
@@ -87,10 +88,12 @@ class FidelityEvaluator:
                 all_findings.extend(analysis.findings)
 
         if not all_findings:
+            synthesis.status = "fallback"
+            synthesis.validation_passed = False
             return EvaluationResult(
                 target_ref=EvidenceRef(ref_id=synthesis.result_id or "synthesis", relation="derived_from"),
                 criteria=list(criteria) or ["numerical_fidelity", "causal_language", "limitation_preserved"],
-                metrics={"passed": True, "evaluated": False},
+                metrics={"passed": False, "evaluated": False},
                 interpretation="No source findings available for fidelity comparison.",
                 evidence_refs=synthesis.evidence_refs,
                 limitations=["No source findings to validate against."],
@@ -121,9 +124,7 @@ class FidelityEvaluator:
         explainer_records = eda_result_to_explainer_examples(synthetic_eda)
 
         if isinstance(selected_record, dict):
-            selected_fid = selected_record.get("finding_id")
-            if selected_fid:
-                explainer_records = [record for record in explainer_records if record.get("finding_id") == selected_fid]
+            explainer_records = [selected_record]
         elif getattr(synthesis, "finding_id", ""):
             explainer_records = [
                 record for record in explainer_records if record.get("finding_id") == synthesis.finding_id
@@ -141,7 +142,11 @@ class FidelityEvaluator:
         checks_to_run = set(criteria) if criteria else hard_checks
 
         for record in explainer_records:
-            checks = run_all_checks(record, synthesis.content)
+            checks = run_all_checks(
+                record,
+                synthesis.content,
+                recommendation=recommendation,
+            )
             for check_name, result in checks.items():
                 if check_name in checks_to_run:
                     total_checks += 1

@@ -58,12 +58,12 @@ The Explainer has **exactly one responsibility**:
 
 ## 2. Model & Adapter Specifications
 
-- **Base Model:** `Qwen/Qwen2.5-3B-Instruct`
+- **Base Model:** `Qwen/Qwen3-4B-Instruct-2507` (verified from the local v0.3 `adapter_config.json`)
 - **Adapter Version:** `v0.3` (`parse/models/qwen3-explainer-v0.3`)
 - **Adapter Architecture:** LoRA (Low-Rank Adaptation)
   - Rank ($r$): `16`
   - Alpha ($\alpha$): `32`
-  - Target Modules: `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`
+   - Target Modules: `q_proj`, `k_proj`, `v_proj`, `o_proj` (verified from the local v0.3 `adapter_config.json`)
 - **Tokenizer:** Ships with adapter config (`tokenizer.json`, `tokenizer_config.json`); automatically preferred when present.
 
 ---
@@ -73,7 +73,7 @@ The Explainer has **exactly one responsibility**:
 | Variable | Type | Default | Description |
 |---|---|---|---|
 | `PARSE_EXPLAINER_ENABLED` | String/Bool | `"1"` (Enabled) | Set to `"0"`, `"false"`, or `"off"` to disable model loading and force graceful deterministic fallback. |
-| `PARSE_BASE_MODEL_PATH` | Directory Path | Empty | Path to a local directory containing pre-downloaded `Qwen2.5-3B-Instruct` base model weights for air-gapped or offline environments. |
+| `PARSE_BASE_MODEL_PATH` | Directory Path | Empty | Path to a local directory containing pre-downloaded `Qwen/Qwen3-4B-Instruct-2507` base model weights for air-gapped or offline environments. |
 
 ---
 
@@ -146,6 +146,6 @@ The calling application receives a valid `ExplainerResult` without interruption.
 - **Quantization:** Compatible with `bitsandbytes` 4-bit / 8-bit loading for low-resource environments.
 
 ### Air-Gapped Setup
-1. Download `Qwen/Qwen2.5-3B-Instruct` to a local folder `/models/qwen2.5-3b-instruct`.
+1. Download `Qwen/Qwen3-4B-Instruct-2507` to a local folder `/models/qwen3-4b-instruct-2507`.
 2. Set `export PARSE_BASE_MODEL_PATH=/models/qwen2.5-3b-instruct`.
 3. The adapter is self-contained within `parse/models/qwen3-explainer-v0.3`. No internet access is required.

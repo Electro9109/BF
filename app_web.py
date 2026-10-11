@@ -1204,6 +1204,7 @@ with tab_eda:
                         target=synthesis,
                         analyses=validation_analyses,
                         record=finding_example,
+                        recommendation=recommendation_text,
                         criteria=[
                             "numerical_fidelity",
                             "causal_language",

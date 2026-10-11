@@ -161,6 +161,74 @@ def test_fidelity_evaluator_with_no_source_findings(sample_dataset):
     )
 
     assert "no source findings" in evaluation.interpretation.lower()
+    assert evaluation.metrics["evaluated"] is False
+    assert evaluation.metrics["passed"] is False
+    assert synthesis.status == "fallback"
+    assert synthesis.validation_passed is False
+
+
+def test_fidelity_evaluator_checks_separately_supplied_recommendation(sample_dataset):
+    source = SourceRef("test_recommendation_fidelity", "user_input")
+    analysis_result = AnalysisOrchestrator().analyze(AnalysisRequest(sample_dataset, source))
+    finding = analysis_result.findings[0]
+    record = finding_to_explainer_example(finding)
+    recommendation = f"Consider removing {record['attributes'].get('column', 'batch_id')} from modelling."
+    synthesis = SynthesisResult(
+        result_id="test_recommendation_synthesis",
+        content="The finding is noted.",
+        evidence_refs=[],
+        analysis_refs=[],
+        method="test",
+        provenance=Provenance(
+            sources=[SourceRef("test", "generated_output")],
+            operation="test",
+            method="test",
+        ),
+        finding_id=finding.finding_id,
+    )
+
+    evaluation = FidelityEvaluator().evaluate(
+        target=synthesis,
+        analyses=[analysis_result],
+        record=record,
+        recommendation=recommendation,
+        criteria=["recommendation_fidelity"],
+    )
+
+    assert evaluation.metrics["passed"] is False
+    assert synthesis.status == "fallback"
+
+
+def test_fidelity_evaluator_checks_exact_selected_record(sample_dataset):
+    source = SourceRef("test_selected_record", "user_input")
+    analysis_result = AnalysisOrchestrator().analyze(AnalysisRequest(sample_dataset, source))
+    finding = analysis_result.findings[0]
+    selected_record = finding_to_explainer_example(finding)
+    selected_record["message"] = "The selected finding reports 777 affected records."
+    selected_record["attributes"] = {"count": 777}
+    synthesis = SynthesisResult(
+        result_id="test_selected_record_synthesis",
+        content=finding_to_explainer_example(finding)["message"],
+        evidence_refs=[],
+        analysis_refs=[],
+        method="test",
+        provenance=Provenance(
+            sources=[SourceRef("test", "generated_output")],
+            operation="test",
+            method="test",
+        ),
+        finding_id=finding.finding_id,
+    )
+
+    evaluation = FidelityEvaluator().evaluate(
+        target=synthesis,
+        analyses=[analysis_result],
+        record=selected_record,
+        criteria=["numerical_fidelity"],
+    )
+
+    assert evaluation.metrics["passed"] is False
+    assert synthesis.status == "fallback"
 
 
 def test_explainer_synthesizer_single_finding_forwards_recommendation(sample_dataset, monkeypatch):
