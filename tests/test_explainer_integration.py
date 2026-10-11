@@ -197,6 +197,23 @@ def test_explainer_synthesizer_single_finding_uses_fallback_when_disabled(sample
     assert synthesis.content == finding_to_explainer_example(finding)["message"]
 
 
+def test_explainer_synthesizer_environment_kill_switch_takes_precedence(monkeypatch):
+    """A PARSE_EXPLAINER_ENABLED=0 kill switch should override an explicit enable flag."""
+    monkeypatch.setenv("PARSE_EXPLAINER_ENABLED", "0")
+    assert ExplainerSynthesizer(enabled=True).is_enabled() is False
+    assert ExplainerSynthesizer(enabled=False).is_enabled() is False
+
+
+def test_explainer_synthesizer_incompatible_analysis_falls_back_cleanly(sample_dataset):
+    """Unsupported or empty analysis inputs must return a controlled fallback instead of crashing."""
+    synthesis = ExplainerSynthesizer().synthesize(evidence=None, analyses=[object()])
+
+    assert synthesis.status == "fallback"
+    assert synthesis.validation_passed is False
+    assert "no findings" in synthesis.content.lower()
+    assert synthesis.result_id.startswith("synthesis_")
+
+
 def test_similarity_cache_clear_function():
     """Test that the similarity cache clear function works."""
     from ml.similarity import clear_training_matrix_cache, _get_cached_training_matrix

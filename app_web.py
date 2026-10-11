@@ -1199,9 +1199,11 @@ with tab_eda:
                     )
                     validation_analyses = [analysis_bundle.eda] if analysis_bundle is not None else [eda_result]
                     evaluator = FidelityEvaluator()
+                    finding_example = finding_to_explainer_example(selected_finding)
                     evaluation = evaluator.evaluate(
                         target=synthesis,
                         analyses=validation_analyses,
+                        record=finding_example,
                         criteria=[
                             "numerical_fidelity",
                             "causal_language",
@@ -1210,13 +1212,20 @@ with tab_eda:
                             "metric_semantics",
                         ],
                     )
-                    fallback_message = finding_to_explainer_example(selected_finding)["message"]
+                    validation_passed = bool(getattr(synthesis, "validation_passed", False)) and bool(evaluation.metrics.get("passed", False))
+                    used_fallback = (
+                        not is_enabled()
+                        or getattr(synthesis, "status", "") == "fallback"
+                        or not validation_passed
+                    )
                     st.session_state.explainer_result = {
                         "finding_id": selected_finding.finding_id,
                         "recommendation": recommendation_text,
                         "content": synthesis.content,
                         "evaluation": evaluation,
-                        "fallback": not is_enabled() or synthesis.content.strip() in {selected_finding.observation.strip(), fallback_message.strip()} or not evaluation.metrics.get("passed", False),
+                        "fallback": used_fallback,
+                        "status": getattr(synthesis, "status", "generated"),
+                        "validation_passed": validation_passed,
                     }
 
                 explainer_result = st.session_state.get("explainer_result")

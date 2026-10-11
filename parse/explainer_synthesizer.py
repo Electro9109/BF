@@ -145,7 +145,7 @@ class ExplainerSynthesizer:
     def is_enabled(self) -> bool:
         """True only when explicit constructor state and env settings allow inference."""
         if self._enabled is not None:
-            return bool(self._enabled)
+            return bool(self._enabled) and is_enabled()
         return is_enabled()
 
     def synthesize(
@@ -261,7 +261,7 @@ class ExplainerSynthesizer:
         else:
             # Fallback: cannot convert without EDAResult structure
             return SynthesisResult(
-                result_id=result_id,
+                result_id=synthesis_result_id,
                 content="Analysis result structure not compatible with Explainer adapter.",
                 evidence_refs=[],
                 analysis_refs=analysis_refs,
@@ -273,6 +273,9 @@ class ExplainerSynthesizer:
                 ),
                 issues=[],
                 limitations=["Analysis result does not contain EDAResult-compatible findings."],
+                status="fallback",
+                validation_passed=False,
+                model_generated=False,
             )
 
         if not self.is_enabled():
