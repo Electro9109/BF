@@ -60,6 +60,7 @@ The Explainer has **exactly one responsibility**:
 
 - **Base Model:** `Qwen/Qwen3-4B-Instruct-2507` (verified from the local v0.3 `adapter_config.json`)
 - **Adapter Version:** `v0.3` (`parse/models/qwen3-explainer-v0.3`)
+- **Prompt Contract:** `v0.3.1` in `parse/explainer_prompt.py` — same recommendation-present structure as the v0.3 task, with an explicit `No recommendation was provided by the analyser.` marker when the analyser omits a recommendation. The model weights and adapter were not retrained for this prompt change.
 - **Adapter Architecture:** LoRA (Low-Rank Adaptation)
   - Rank ($r$): `16`
   - Alpha ($\alpha$): `32`

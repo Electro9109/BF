@@ -1,69 +1,79 @@
-"""Versioned prompt builder for the PARSE Qwen Explainer v0.3.
+"""Versioned prompt builder for the PARSE Qwen Explainer.
 
-Converts an Explainer record (as produced by explainer_adapter.py) into
-the exact chat-message list expected by the v0.3 LoRA adapter.
-
-Design rules
-------------
-- The prompt builder is the **only** place the prompt format is defined.
-  Both production inference and the evaluation harness import from here.
-- No prompt-building logic lives in run_comparison.py or explainer_llm.py.
-- Recommendations are passed in separately and mapped onto their own prompt
-  section; they are NEVER invented when absent.
-- The system instruction enforces strict translation semantics so the model
-  cannot invent statistics, causes, or consequences not present in the input.
+The prompt contract is centralized here so the runtime inference path and the
+fidelity/eval path cannot drift apart. The v0.3 recommendation-aware format is
+kept as the canonical template, with a no-recommendation marker as a safe
+extension for analyser outputs that do not include a recommendation.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-# The schema version this builder targets.  Bump when the prompt contract changes.
-PROMPT_VERSION = "v0.3"
+# Prompt contract version. This is intentionally bumped from v0.3 to reflect
+# the no-recommendation explicit marker while keeping the recommendation-present
+# path as close as practical to the original training format.
+PROMPT_VERSION = "v0.3.1"
 
 _SYSTEM_INSTRUCTION = """\
-You are a statistical translator for a data-quality analysis system called PARSE.
+You are a statistical analysis translator.
 
-Your only job is to translate a structured statistical finding into a single clear, \
-concise paragraph for a non-specialist reader.
+Your job is to translate supplied statistical analysis results and recommendations into clear language for a non-statistical user.
 
-STRICT RULES — follow them exactly:
-1. Preserve every important number exactly as given (counts, percentages, \
-correlation values, skewness values, spread values, etc.).
-2. Preserve the recommendation exactly as supplied — do NOT weaken, strengthen, \
-or omit it.  "Consider removing" must remain "consider removing", never "remove".
-3. Preserve uncertainty and any supplied limitations or caveats.
-4. Do NOT invent statistics, causes, mechanisms, or consequences that are not \
-present in the supplied finding.
-5. Do NOT reinterpret one statistic as another:
-   - Q1 and Q3 are quartiles, NOT the median.
-   - IQR is the interquartile range, NOT the range.
-   - A correlation is NOT a cause.
-6. Do NOT convert an associational finding into a causal claim.
-7. Do NOT add recommendations when none is supplied.
-8. Translate the supplied finding; do not extend, speculate, or editorialize.
+You are NOT responsible for calculating statistics, performing new analysis, or creating recommendations.
 
-Output: one plain-language paragraph only.  No bullet points, no headings.\
+Rules:
+
+1. Preserve the main numerical evidence needed to understand the finding.
+2. Explain statistical values in plain language.
+3. Preserve the meaning and strength of the supplied recommendation.
+4. Connect the observation to the supplied recommendation when supported.
+5. Never invent a recommendation.
+6. Never invent a cause, explanation, hypothesis, or finding.
+7. Never turn correlation or association into causation.
+8. Preserve uncertainty and qualifying language such as "may", "possible", "consider", "review", and "investigate".
+9. Distinguish statistical significance from relationship strength.
+10. Do not reproduce every statistic when it does not help explain the finding.
+11. Integrate important numbers naturally into the explanation.
+12. Keep the explanation concise and readable.
+13. Write for a normal user rather than a statistician.
+14. Explain both what was observed and what the supplied recommendation means, when a recommendation exists.
+15. If no recommendation is supplied, explain the observation without creating an action or recommendation. Make clear that no recommendation was provided when relevant.
+
+Output one concise, plain-language explanation. Do not add unsupported information.\
 """
 
-_FINDING_TEMPLATE = """\
-Finding:
-  message: {message}
-  category: {category}
-  kind: {kind}\
+_USER_INSTRUCTION = """\
+You are a statistical analysis translator.
+
+Your job is to translate supplied statistical analysis results and recommendations into clear language for a non-statistical user.
+
+You are NOT responsible for calculating statistics, performing new analysis, or creating recommendations.
+
+Rules:
+
+- Preserve the main numerical evidence needed to understand the finding.
+- Explain statistical values in plain language.
+- Preserve the meaning and strength of the supplied recommendation.
+- Connect the observation to the supplied recommendation when supported.
+- Never invent a recommendation.
+- Never invent a cause, explanation, hypothesis, or finding.
+- Never turn correlation or association into causation.
+- Preserve uncertainty and qualifying language such as "may", "possible", "consider", "review", and "investigate".
+- Distinguish statistical significance from relationship strength.
+- Do not reproduce every statistic when it does not help explain the finding.
+- Integrate important numbers naturally.
+- Keep the explanation concise and readable.
+EDA RESULT:
+{analysis}
+
+RECOMMENDATION:
+{recommendation_text}
+
+## Write a concise explanation suitable for a normal user.
 """
 
-_ATTRIBUTES_SECTION = """\
-  attributes: {attributes}\
-"""
-
-_LIMITATIONS_SECTION = """\
-  limitations: {limitations}\
-"""
-
-_RECOMMENDATION_SECTION = """\
-  recommendation: {recommendation}\
-"""
+_NO_RECOMMENDATION_MARKER = "No recommendation was provided by the analyser."
 
 
 def _format_attributes(attributes: dict[str, Any]) -> str:
@@ -76,6 +86,8 @@ def _format_attributes(attributes: dict[str, Any]) -> str:
             continue
         if isinstance(value, float):
             parts.append(f"{key}={value:g}")
+        elif isinstance(value, (int, str, bool)):
+            parts.append(f"{key}={value!r}")
         else:
             parts.append(f"{key}={value!r}")
     return ", ".join(parts) if parts else "none"
@@ -89,73 +101,48 @@ def _format_limitations(limitations: list[str]) -> str:
     return "; ".join(limitations)
 
 
+def _analysis_text(record: dict[str, Any]) -> str:
+    """Convert an explainer record into the analysis text the model should translate."""
+    if not isinstance(record, dict):
+        return "The analyser returned an invalid record."
+
+    message = str(record.get("message") or "").strip()
+    category = record.get("category")
+    kind = record.get("kind")
+    attributes = record.get("attributes") or {}
+    limitations = record.get("limitations") or []
+
+    parts = [message]
+    if category or kind:
+        parts.append(f"Category: {category or 'unknown'} | Kind: {kind or 'unknown'}")
+    if attributes:
+        parts.append(f"Attributes: {_format_attributes(attributes)}")
+    if limitations:
+        parts.append(f"Limitations: {_format_limitations(limitations)}")
+    text = "\n".join(part for part in parts if part)
+    return text or "The analyser returned no usable finding details."
+
+
 def build_user_message(
     record: dict[str, Any],
     recommendation: str | None = None,
 ) -> str:
-    """Build the user-turn message from an Explainer record dict.
-
-    Parameters
-    ----------
-    record:
-        A dict in the Explainer schema (schema_version, finding_id, source,
-        category, kind, message, attributes, limitations).
-    recommendation:
-        Optional recommendation string from the analysis engine.  Pass it
-        only when one genuinely exists; do NOT invent or default one.
-
-    Returns
-    -------
-    str
-        The formatted user-turn string ready for the chat template.
-    """
-    parts = [
-        _FINDING_TEMPLATE.format(
-            message=record.get("message", ""),
-            category=record.get("category", ""),
-            kind=record.get("kind", ""),
-        )
-    ]
-
-    attributes = record.get("attributes", {})
-    parts.append(_ATTRIBUTES_SECTION.format(
-        attributes=_format_attributes(attributes)
-    ))
-
-    limitations = record.get("limitations", [])
-    parts.append(_LIMITATIONS_SECTION.format(
-        limitations=_format_limitations(limitations)
-    ))
-
-    if recommendation:
-        parts.append(_RECOMMENDATION_SECTION.format(
-            recommendation=recommendation.strip()
-        ))
-
-    return "\n".join(parts)
+    """Build the user-turn message using the v0.3-compatible template."""
+    analysis = _analysis_text(record)
+    rec_text = (recommendation or "").strip()
+    if not rec_text:
+        rec_text = _NO_RECOMMENDATION_MARKER
+    return _USER_INSTRUCTION.format(
+        analysis=analysis,
+        recommendation_text=rec_text,
+    )
 
 
 def build_chat_messages(
     record: dict[str, Any],
     recommendation: str | None = None,
 ) -> list[dict[str, str]]:
-    """Return the full chat-message list for the v0.3 adapter.
-
-    Use this with tokenizer.apply_chat_template(messages, ...) to get the
-    correctly formatted input tensor.
-
-    Parameters
-    ----------
-    record:
-        Explainer record dict (from explainer_adapter.py).
-    recommendation:
-        Optional recommendation string.  Pass only when one actually exists.
-
-    Returns
-    -------
-    list[dict]
-        [{"role": "system", "content": ...}, {"role": "user", "content": ...}]
-    """
+    """Return the full chat-message list for the model inference run."""
     return [
         {"role": "system", "content": _SYSTEM_INSTRUCTION},
         {"role": "user", "content": build_user_message(record, recommendation)},

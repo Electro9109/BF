@@ -77,9 +77,8 @@ def test_build_chat_messages_returns_two_turns(outlier_record):
 def test_system_message_contains_strict_rules(outlier_record):
     msgs = build_chat_messages(outlier_record)
     system = msgs[0]["content"]
-    # Core constraints must be encoded in the system turn
-    assert "do not invent" in system.lower() or "not invent" in system.lower()
-    assert "causal" in system.lower()
+    assert "never invent a recommendation" in system.lower() or "never invent" in system.lower()
+    assert "causation" in system.lower() or "causal" in system.lower()
     assert "recommendation" in system.lower()
 
 
@@ -102,14 +101,14 @@ def test_user_message_contains_attributes(outlier_record):
 
 def test_user_message_contains_limitations(outlier_record):
     user = build_user_message(outlier_record)
-    assert "statistical outlier is not automatically a data error" in user
+    assert "A statistical outlier is not automatically a data error" in user
 
 
-def test_user_message_with_no_limitations_says_none(skew_record):
+def test_user_message_with_no_limitations_reports_analysis_details(skew_record):
     user = build_user_message(skew_record)
-    # limitations section must still be present, but say "none"
-    assert "limitations" in user.lower()
-    assert "none" in user.lower()
+    assert "EDA RESULT:" in user
+    assert "1.87" in user
+    assert "skewness" in user.lower()
 
 
 # ── Recommendation handling ────────────────────────────────────────────────────
@@ -124,14 +123,15 @@ def test_recommendation_included_when_provided(identifier_record):
 
 def test_recommendation_absent_when_not_provided(outlier_record):
     user = build_user_message(outlier_record)
-    # When no recommendation is passed, no recommendation section should appear
-    assert "recommendation:" not in user.lower()
+    assert "RECOMMENDATION:" in user
+    assert "No recommendation was provided by the analyser." in user
 
 
 def test_recommendation_not_invented_for_no_rec_finding(skew_record):
-    """If recommendation is not passed, it must not appear in the prompt."""
+    """A missing recommendation must be explicit, not invented."""
     user = build_user_message(skew_record, recommendation=None)
-    assert "recommendation:" not in user.lower()
+    assert "RECOMMENDATION:" in user
+    assert "No recommendation was provided by the analyser." in user
 
 
 # ── Failure case A: Recommendation strength preservation ──────────────────────
@@ -187,5 +187,20 @@ def test_chat_messages_no_assistant_turn_prefilled(outlier_record):
 # ── Prompt version ─────────────────────────────────────────────────────────────
 
 
-def test_prompt_version_is_v03():
-    assert PROMPT_VERSION == "v0.3"
+def test_prompt_version_is_v031():
+    assert PROMPT_VERSION == "v0.3.1"
+
+
+def test_user_message_uses_no_recommendation_marker_when_missing(outlier_record):
+    user = build_user_message(outlier_record, recommendation=None)
+    assert "EDA RESULT:" in user
+    assert "RECOMMENDATION:" in user
+    assert "No recommendation was provided by the analyser." in user
+
+
+def test_user_message_includes_fully_written_v03_template(outlier_record):
+    user = build_user_message(outlier_record, recommendation="Consider removing measurement from modelling.")
+    assert "You are a statistical analysis translator." in user
+    assert "EDA RESULT:" in user
+    assert "Consider removing measurement from modelling." in user
+    assert "## Write a concise explanation suitable for a normal user." in user

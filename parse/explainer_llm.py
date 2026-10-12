@@ -287,23 +287,20 @@ def explain(
 ) -> ExplainerResult:
     """Translate one Explainer record into a human-readable explanation.
 
-    Parameters
-    ----------
-    record:
-        An Explainer record dict (schema_version, finding_id, source,
-        category, kind, message, attributes, limitations).
-    recommendation:
-        Optional recommendation string from the analysis engine.
-        Pass only when one genuinely exists; do NOT invent one.
-
-    Returns
-    -------
-    ExplainerResult
-        ``.text`` is the explanation or deterministic fallback.
-        ``.fallback_used`` is True when validation failed.
+    Falls back to the original analyser message when the record is malformed,
+    the prompt cannot be built, the model/tokenizer cannot load, generation
+    fails, or the output does not pass fidelity validation.
     """
-    finding_id = record.get("finding_id", "")
-    fallback_text = record.get("message", "")
+    if not isinstance(record, dict):
+        return ExplainerResult(
+            text="",
+            fallback_used=True,
+            validation_detail="Malformed explainer record: expected a dict.",
+            finding_id="",
+        )
+
+    finding_id = str(record.get("finding_id", ""))
+    fallback_text = str(record.get("message", "")).strip() or "No finding details were supplied."
 
     if not is_enabled():
         logger.debug("Explainer LLM disabled; returning fallback for %s", finding_id)
@@ -318,16 +315,26 @@ def explain(
     if _model is None:
         try:
             load_model()
-        except (ImportError, FileNotFoundError) as exc:
-            logger.warning("Explainer LLM unavailable: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Explainer LLM unavailable for %s: %s", finding_id, exc)
             return ExplainerResult(
                 text=fallback_text,
                 fallback_used=True,
-                validation_detail=str(exc),
+                validation_detail=f"Model load failed: {exc}",
                 finding_id=finding_id,
             )
 
-    messages = build_chat_messages(record, recommendation)
+    try:
+        messages = build_chat_messages(record, recommendation)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Prompt construction failed for %s: %s", finding_id, exc)
+        return ExplainerResult(
+            text=fallback_text,
+            fallback_used=True,
+            validation_detail=f"Prompt construction failed: {exc}",
+            finding_id=finding_id,
+        )
+
     try:
         generated_text, n_prompt, n_new = _generate_raw(messages)
     except Exception as exc:  # noqa: BLE001
@@ -337,6 +344,16 @@ def explain(
             fallback_used=True,
             validation_detail=f"Inference error: {exc}",
             finding_id=finding_id,
+        )
+
+    if not generated_text or not generated_text.strip():
+        return ExplainerResult(
+            text=fallback_text,
+            fallback_used=True,
+            validation_detail="Model returned empty output; using fallback.",
+            finding_id=finding_id,
+            prompt_token_count=n_prompt,
+            generated_token_count=n_new,
         )
 
     passed, detail = _validate(record, generated_text, recommendation=recommendation)

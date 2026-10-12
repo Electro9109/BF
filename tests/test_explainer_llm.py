@@ -203,6 +203,30 @@ def test_explain_returns_fallback_on_inference_exception(monkeypatch, outlier_re
     assert "CUDA OOM" in result.validation_detail
 
 
+def test_explain_returns_fallback_on_malformed_record(monkeypatch):
+    monkeypatch.delenv(ENABLED_ENV_VAR, raising=False)
+    result = explain(None)
+    assert result.fallback_used is True
+    assert "Malformed explainer record" in result.validation_detail
+
+
+def test_explain_returns_fallback_on_model_load_failure(monkeypatch, outlier_record):
+    monkeypatch.delenv(ENABLED_ENV_VAR, raising=False)
+    with patch.object(llm_module, "load_model", side_effect=RuntimeError("tokenizer config incompatible")):
+        result = explain(outlier_record)
+    assert result.fallback_used is True
+    assert "Model load failed" in result.validation_detail
+
+
+def test_explain_returns_fallback_on_empty_generated_output(monkeypatch, outlier_record):
+    monkeypatch.delenv(ENABLED_ENV_VAR, raising=False)
+    _mock_model_and_tokenizer(llm_module)
+    with patch.object(llm_module, "_generate_raw", return_value=("   ", 8, 0)):
+        result = explain(outlier_record)
+    assert result.fallback_used is True
+    assert "empty output" in result.validation_detail.lower()
+
+
 # ── Prompt-echo protection ─────────────────────────────────────────────────────
 
 
