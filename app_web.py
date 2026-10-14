@@ -379,6 +379,41 @@ def _explainer_display_content(result: dict, fallback_content: str) -> str:
     return str(result.get("content") or fallback_content)
 
 
+def _build_dataset_summary(eda_result) -> dict:
+    """Build a dataset-level report directly from the analyzer's findings."""
+    findings = list(eda_result.findings)
+    observations = [
+        {
+            "finding_id": finding.finding_id,
+            "observation": finding.observation,
+        }
+        for finding in findings
+    ]
+    limitations = list(dict.fromkeys(
+        limitation
+        for item in findings
+        for limitation in item.limitations
+    ))
+    limitations.extend(
+        limitation
+        for limitation in eda_result.limitations
+        if limitation not in limitations
+    )
+    return {
+        "finding_count": len(findings),
+        "scope": (
+            f"The analysis reported {len(findings)} finding(s) across "
+            f"{eda_result.dataset_profile.row_count} rows and "
+            f"{eda_result.dataset_profile.column_count} columns. "
+            "This summary reflects only the findings listed here, not every "
+            "possible property of the dataset."
+        ),
+        "observations": observations[:5],
+        "omitted_count": max(0, len(observations) - 5),
+        "limitations": limitations,
+    }
+
+
 def _flatten_for_display(rows: list[dict]) -> list[dict]:
     """Flatten any list/dict-valued cell into a display-safe string.
 
@@ -1076,11 +1111,15 @@ with tab_eda:
             st.session_state.analysis_context = HumanContext()
             st.session_state.cleaning_result = None
             st.session_state.explainer_result = None
+            st.session_state.explainer_finding_key = ""
+            st.session_state.explainer_recommendation = ""
         except Exception as exc:
             st.session_state.eda_result = None
             st.session_state.eda_frame = None
             st.session_state.analysis_bundle = None
             st.session_state.explainer_result = None
+            st.session_state.explainer_finding_key = ""
+            st.session_state.explainer_recommendation = ""
             st.error(f"Dataset profiling failed: {exc}")
 
     eda_result = st.session_state.get("eda_result")
@@ -1101,135 +1140,164 @@ with tab_eda:
         overview[2].metric("Findings", len(eda_result.findings))
         overview[3].metric("Modified", "No" if not eda_result.data_modified else "Yes")
 
-        st.markdown("### Overview")
-        st.markdown(eda_result.summary())
-
-        st.markdown("### Plain-language explanation")
-        st.caption("Explains one selected finding at a time; it is not a dataset-wide synthesis.")
-        if not eda_result.findings:
-            st.info("No findings are available to explain for this dataset.")
+        st.markdown("### What the analysis tells us")
+        dataset_summary = _build_dataset_summary(eda_result)
+        if not dataset_summary["finding_count"]:
+            st.info("Profiling did not produce findings to summarize.")
         else:
-            finding_options = {
-                f"{finding.finding_id}: {finding.observation}": finding
-                for finding in eda_result.findings
-            }
-            finding_keys = list(finding_options)
-            default_key = finding_keys[0]
-            selected_key = st.selectbox(
-                "Finding to explain",
-                options=finding_keys,
-                index=(
-                    finding_keys.index(st.session_state["explainer_finding_key"])
-                    if st.session_state.get("explainer_finding_key") in finding_options
-                    else 0
-                ),
-                key="explainer_finding_key",
+            st.caption(
+                "Source-backed summary of the available analyzer findings. "
+                "No additional findings or recommendations are generated."
             )
-            selected_finding = finding_options[selected_key]
-            recommendation = st.text_area(
-                "Recommendation (optional)",
-                value=st.session_state.get("explainer_recommendation", ""),
-                help="Pass an existing recommendation separately; the explanation will not invent one.",
-                key="explainer_recommendation",
+            if dataset_summary["omitted_count"]:
+                st.caption(
+                    f"Showing 5 of {dataset_summary['finding_count']} findings; "
+                    "the complete findings remain available below."
+                )
+            summary_items = "".join(
+                f"<li>{html.escape(str(item['observation']))}</li>"
+                for item in dataset_summary["observations"]
             )
-            recommendation_text = recommendation.strip() or None
-
-            if st.button("Generate explanation", key="generate_explainer", type="primary"):
-                from parse.explainer_adapter import finding_to_explainer_example
-                from parse.explainer_llm import is_enabled
-                from parse.explainer_synthesizer import ExplainerSynthesizer
-                from parse.fidelity_evaluator import FidelityEvaluator
-
-                finding_example = finding_to_explainer_example(selected_finding)
-                fallback_content = finding_example["message"]
-                evaluation = None
-                status = "fallback"
-                validation_passed = False
-                try:
-                    synthesizer = ExplainerSynthesizer()
-                    synthesis = synthesizer.synthesize_finding(
-                        selected_finding,
-                        recommendation=recommendation_text,
-                        evidence=None,
-                    )
-                    validation_analyses = [analysis_bundle.eda] if analysis_bundle is not None else [eda_result]
-                    evaluation = FidelityEvaluator().evaluate(
-                        target=synthesis,
-                        analyses=validation_analyses,
-                        record=finding_example,
-                        recommendation=recommendation_text,
-                        criteria=[
-                            "numerical_fidelity",
-                            "causal_language",
-                            "limitation_preserved",
-                            "recommendation_fidelity",
-                            "metric_semantics",
-                        ],
-                    )
-                    validation_passed = (
-                        bool(getattr(synthesis, "validation_passed", False))
-                        and bool(evaluation.metrics.get("passed", False))
-                    )
-                    status = getattr(synthesis, "status", "fallback")
-                    used_fallback = (
-                        not is_enabled()
-                        or status == "fallback"
-                        or not validation_passed
-                    )
-                    result_content = synthesis.content
-                except Exception:
-                    logger.exception(
-                        "Explainer generation failed for finding %s",
-                        selected_finding.finding_id,
-                    )
-                    used_fallback = True
-                    result_content = fallback_content
-
-                st.session_state.explainer_result = {
-                    "finding_id": selected_finding.finding_id,
-                    "recommendation": recommendation_text,
-                    "content": result_content,
-                    "evaluation": evaluation,
-                    "fallback": used_fallback,
-                    "status": status,
-                    "validation_passed": validation_passed,
-                }
-
-            explainer_result = _matching_explainer_result(
-                st.session_state.get("explainer_result"),
-                selected_finding.finding_id,
-                recommendation_text,
+            st.markdown(
+                '<div class="explainer-card">'
+                f'<p class="explainer-copy">{html.escape(dataset_summary["scope"])}</p>'
+                f'<ul class="explainer-copy">{summary_items}</ul>'
+                "</div>",
+                unsafe_allow_html=True,
             )
-            if explainer_result is None:
-                st.info("Choose a finding, optionally add a recommendation, then generate its explanation.")
+            if dataset_summary["limitations"]:
+                with st.expander("Analysis limitations", expanded=False):
+                    for limitation in dataset_summary["limitations"]:
+                        st.markdown(f"- {limitation}")
+
+        with st.expander("Explain an individual finding", expanded=False):
+            if not eda_result.findings:
+                st.info("No findings are available to explain.")
             else:
-                from parse.explainer_adapter import finding_to_explainer_example
-
-                used_fallback = bool(explainer_result.get("fallback"))
-                display_content = _explainer_display_content(
-                    explainer_result,
-                    finding_to_explainer_example(selected_finding)["message"],
+                finding_options = {
+                    f"{finding.finding_id}: {finding.observation}": finding
+                    for finding in eda_result.findings
+                }
+                finding_keys = list(finding_options)
+                selected_key = st.selectbox(
+                    "Finding to explain",
+                    options=finding_keys,
+                    index=(
+                        finding_keys.index(st.session_state["explainer_finding_key"])
+                        if st.session_state.get("explainer_finding_key") in finding_options
+                        else 0
+                    ),
+                    key="explainer_finding_key",
                 )
-                if used_fallback:
-                    st.caption("Showing the original finding because a validated explanation was unavailable.")
+                selected_finding = finding_options[selected_key]
+                recommendation = st.text_area(
+                    "Recommendation (optional)",
+                    value=st.session_state.get("explainer_recommendation", ""),
+                    help="Pass an existing recommendation separately; the explanation will not invent one.",
+                    key="explainer_recommendation",
+                    height=68,
+                )
+                recommendation_text = recommendation.strip() or None
+
+                if st.button("Generate explanation", key="generate_explainer", type="primary"):
+                    from parse.explainer_adapter import finding_to_explainer_example
+                    from parse.explainer_llm import is_enabled
+                    from parse.explainer_synthesizer import ExplainerSynthesizer
+                    from parse.fidelity_evaluator import FidelityEvaluator
+
+                    finding_example = finding_to_explainer_example(selected_finding)
+                    fallback_content = finding_example["message"]
+                    evaluation = None
+                    status = "fallback"
+                    validation_passed = False
+                    try:
+                        synthesizer = ExplainerSynthesizer()
+                        synthesis = synthesizer.synthesize_finding(
+                            selected_finding,
+                            recommendation=recommendation_text,
+                            evidence=None,
+                        )
+                        validation_analyses = [analysis_bundle.eda] if analysis_bundle is not None else [eda_result]
+                        evaluation = FidelityEvaluator().evaluate(
+                            target=synthesis,
+                            analyses=validation_analyses,
+                            record=finding_example,
+                            recommendation=recommendation_text,
+                            criteria=[
+                                "numerical_fidelity",
+                                "causal_language",
+                                "limitation_preserved",
+                                "recommendation_fidelity",
+                                "metric_semantics",
+                            ],
+                        )
+                        validation_passed = (
+                            bool(getattr(synthesis, "validation_passed", False))
+                            and bool(evaluation.metrics.get("passed", False))
+                        )
+                        status = getattr(synthesis, "status", "fallback")
+                        used_fallback = (
+                            not is_enabled()
+                            or status == "fallback"
+                            or not validation_passed
+                        )
+                        result_content = synthesis.content
+                    except Exception:
+                        logger.exception(
+                            "Explainer generation failed for finding %s",
+                            selected_finding.finding_id,
+                        )
+                        used_fallback = True
+                        result_content = fallback_content
+
+                    st.session_state.explainer_result = {
+                        "finding_id": selected_finding.finding_id,
+                        "recommendation": recommendation_text,
+                        "content": result_content,
+                        "evaluation": evaluation,
+                        "fallback": used_fallback,
+                        "status": status,
+                        "validation_passed": validation_passed,
+                    }
+
+                explainer_result = _matching_explainer_result(
+                    st.session_state.get("explainer_result"),
+                    selected_finding.finding_id,
+                    recommendation_text,
+                )
+                if explainer_result is None:
+                    st.info("Choose a finding and generate its individual explanation.")
                 else:
-                    st.caption("Validated explanation of the selected finding.")
-                st.markdown(
-                    '<div class="explainer-card"><div class="explainer-copy">'
-                    f'{html.escape(display_content)}'
-                    "</div></div>",
-                    unsafe_allow_html=True,
-                )
+                    from parse.explainer_adapter import finding_to_explainer_example
 
-                with st.expander("View source finding and statistics", expanded=False):
-                    st.json(selected_finding.to_dict())
-                    evaluation = explainer_result.get("evaluation")
-                    if evaluation is not None:
-                        st.caption("Validation details")
-                        st.json({
-                            "metrics": evaluation.metrics,
-                            "limitations": evaluation.limitations,
-                        })
+                    used_fallback = bool(explainer_result.get("fallback"))
+                    display_content = _explainer_display_content(
+                        explainer_result,
+                        finding_to_explainer_example(selected_finding)["message"],
+                    )
+                    if used_fallback:
+                        st.caption("Showing the original finding because a validated explanation was unavailable.")
+                    else:
+                        st.caption("Validated explanation of the selected finding.")
+                    st.markdown(
+                        '<div class="explainer-card"><div class="explainer-copy">'
+                        f'{html.escape(display_content)}'
+                        "</div></div>",
+                        unsafe_allow_html=True,
+                    )
+
+                    with st.expander("View source finding and statistics", expanded=False):
+                        st.json(selected_finding.to_dict())
+                        evaluation = explainer_result.get("evaluation")
+                        if evaluation is not None:
+                            st.caption("Validation details")
+                            st.json({
+                                "metrics": evaluation.metrics,
+                                "limitations": evaluation.limitations,
+                            })
+
+        st.markdown("### Dataset overview")
+        st.markdown(eda_result.summary())
 
         analysis_bundle = st.session_state.get("analysis_bundle")
         if analysis_bundle is not None:
@@ -1461,6 +1529,8 @@ with tab_eda:
                         st.session_state.analysis_bundle = adopted_bundle
                         st.session_state.eda_result = adopted_bundle.eda
                         st.session_state.explainer_result = None
+                        st.session_state.explainer_finding_key = ""
+                        st.session_state.explainer_recommendation = ""
                         st.success(
                             "Working dataset updated to the cleaned frame. "
                             "Detected issues and dataset analysis below reflect this version."
