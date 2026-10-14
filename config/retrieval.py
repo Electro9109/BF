@@ -9,6 +9,9 @@ config.retrieval_domain.
 # Number of chunks returned by RetrievalEngine.search() by default
 TOP_K = 5
 
+# Search this multiple of the requested result count before section reranking.
+RERANK_CANDIDATE_MULTIPLIER = 2
+
 # Minimum candidate chunks required for a topic filter to be considered
 # "valid". If a topic match returns fewer than this, fall back to the
 # full corpus (see retrieval/retriever.py).

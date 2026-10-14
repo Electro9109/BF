@@ -3,7 +3,7 @@
 Status: Phase 4 Automated Data Understanding complete at engine level
 Date: 2026-09-07
 
-These contracts describe the smallest stable information boundaries justified by the cleaned BF prototype. They are design contracts, not yet a runtime package. Phase 3 will implement them only after review.
+These contracts describe the smallest stable information boundaries justified by the cleaned BF prototype. The minimal runtime contracts and first BF integration slice are implemented under `parse/core/` and `parse/adapters/`; broader workflow integration remains future work.
 
 ## 1. Design Decisions
 

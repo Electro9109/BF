@@ -7,11 +7,33 @@ ML/prediction side - if either of those changes, this file is
 unaffected.
 """
 
+import logging
+import re
+from dataclasses import dataclass
+
 from data.loader import load_and_chunk_data
 from data.schemas import Chunk
 from llm.generator import generate
 from llm.loader import load_model
+from parse.adapters.bf import (
+    answer_to_synthesis,
+    chunk_to_knowledge_item,
+    retrieval_matches_to_result,
+)
+from parse.core.contracts import RetrievalResult, SynthesisResult
 from retrieval.retriever import RetrievalEngine
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RAGResponse:
+    """Legacy RAG output together with PARSE retrieval and synthesis results."""
+
+    answer: str
+    matches: list[tuple[Chunk, float]]
+    retrieval: RetrievalResult | None
+    synthesis: SynthesisResult | None
 
 
 def build_engine(docs_dir: str) -> tuple[RetrievalEngine | None, list[Chunk]]:
@@ -47,6 +69,139 @@ def _order_for_context(matches: list) -> list:
     return ordered
 
 
+def _assemble_context_with_matches(
+    ranked_matches: list,
+    max_context_chars: int,
+) -> tuple[str, list[tuple[Chunk, float]]]:
+    """Pack source-labelled passages and return chunks included in context."""
+    if max_context_chars <= 0:
+        return "", []
+
+    parts = []
+    included_matches = []
+    for original_rank, (chunk, score) in _order_for_context(ranked_matches):
+        header = f"[Source {original_rank}: {chunk.source} | Section: {chunk.section}]\n"
+        passage = header + chunk.content
+        separator = "\n\n" if parts else ""
+        remaining = max_context_chars - sum(map(len, parts)) - len(separator)
+        if len(passage) <= remaining:
+            parts.append(separator + passage)
+            included_matches.append((chunk, score))
+            continue
+
+        if parts:
+            break
+
+        marker = "\n[Passage truncated to fit context budget.]"
+        content_budget = remaining - len(header) - len(marker)
+        if content_budget <= 0:
+            return "", included_matches
+        parts.append(header + chunk.content[:content_budget] + marker)
+        included_matches.append((chunk, score))
+        break
+
+    return "".join(parts), included_matches
+
+
+def _assemble_context(ranked_matches: list, max_context_chars: int) -> str:
+    """Pack complete source-labelled passages within the character budget."""
+    return _assemble_context_with_matches(ranked_matches, max_context_chars)[0]
+
+
+def answer_question_structured(
+    question: str,
+    search_query: str,
+    engine: RetrievalEngine,
+    tokenizer,
+    model,
+    top_n: int,
+    max_context_chars: int = 12000,
+) -> RAGResponse:
+    """
+    Run retrieval and generation while preserving PARSE evidence contracts.
+
+    `search_query` may differ from `question` (e.g. rolling context for
+    short follow-ups) - retrieval uses search_query, but the LLM prompt
+    uses the original `question`. Retrieval records all ranked matches while
+    synthesis references only chunks included in the generation context.
+    """
+    if engine is None:
+        return RAGResponse("No document index is available.", [], None, None)
+
+    try:
+        matches = engine.search(search_query, top_n=top_n)
+    except Exception:
+        logger.exception("Document retrieval failed for query %r", search_query)
+        return RAGResponse(
+            "Document retrieval failed. Please try again.",
+            [],
+            None,
+            None,
+        )
+
+    retrieval = None
+    if isinstance(search_query, str) and search_query.strip():
+        try:
+            retrieval = retrieval_matches_to_result(search_query, matches)
+        except (TypeError, ValueError):
+            logger.exception(
+                "Could not represent retrieved evidence for query %r",
+                search_query,
+            )
+
+    if not matches:
+        return RAGResponse(
+            "No relevant content found for that question. "
+            "Try rephrasing, or upload the relevant document using the sidebar.",
+            matches,
+            retrieval,
+            None,
+        )
+
+    ranked = list(enumerate(matches, 1))
+    context, included_matches = _assemble_context_with_matches(
+        ranked,
+        max_context_chars,
+    )
+    if not context:
+        return RAGResponse(
+            "The context limit is too small to include source evidence.",
+            matches,
+            retrieval,
+            None,
+        )
+
+    try:
+        response = generate(question, context, tokenizer, model)
+    except Exception:
+        logger.exception("Answer generation failed for question %r", question)
+        return RAGResponse(
+            "Answer generation failed. Please retry the question.",
+            matches,
+            retrieval,
+            None,
+        )
+
+    response = _apply_hallucination_guard(response, context)
+    synthesis = None
+    if retrieval is not None:
+        included_item_ids = {
+            chunk_to_knowledge_item(chunk).item_id
+            for chunk, _score in included_matches
+        }
+        try:
+            synthesis = answer_to_synthesis(
+                response,
+                retrieval,
+                included_item_ids=included_item_ids,
+            )
+        except (TypeError, ValueError):
+            logger.exception(
+                "Could not represent generated answer as PARSE synthesis"
+            )
+    return RAGResponse(response, matches, retrieval, synthesis)
+
+
 def answer_question(
     question: str,
     search_query: str,
@@ -56,53 +211,26 @@ def answer_question(
     top_n: int,
     max_context_chars: int = 12000,
 ) -> tuple[str, list[tuple[Chunk, float]]]:
-    """
-    Run retrieval + generation for one question.
-
-    `search_query` may differ from `question` (e.g. rolling context for
-    short follow-ups) - retrieval uses search_query, but the LLM prompt
-    uses the original `question`.
-
-    Returns (answer_text, matches) where matches is the same
-    [(chunk, score), ...] list shown in the diagnostics panel.
-    """
-    if engine is None:
-        return "No document index is available.", []
-
-    try:
-        matches = engine.search(search_query, top_n=top_n)
-    except Exception as exc:
-        return f"Document retrieval failed: {exc}", []
-
-    if not matches:
-        return (
-            "No relevant content found for that question. "
-            "Try rephrasing, or upload the relevant document using the sidebar."
-        ), matches
-
-    ranked = list(enumerate(matches, 1))  # [(original_rank, (chunk, score)), ...]
-    context_parts = []
-    for original_rank, (chunk, score) in _order_for_context(ranked):
-        context_parts.append(f"[Source {original_rank}: {chunk.source}]\n{chunk.content}")
-    context = "\n\n".join(context_parts)[:max_context_chars]
-
-    try:
-        response = generate(question, context, tokenizer, model)
-    except Exception as exc:
-        return f"Answer generation failed: {exc}", matches
-
-    response = _apply_hallucination_guard(response, context)
-    return response, matches
+    """Compatibility wrapper preserving the established answer/matches tuple."""
+    result = answer_question_structured(
+        question,
+        search_query,
+        engine,
+        tokenizer,
+        model,
+        top_n,
+        max_context_chars,
+    )
+    return result.answer, result.matches
 
 
 def _apply_hallucination_guard(response: str, context: str) -> str:
     """
-    If the response shares fewer than 3 content words (4+ chars) with the
-    retrieved context, the model likely ignored the context and generated
-    from its own weights. Replace with a safe fallback.
+    This lightweight lexical-overlap check catches some ungrounded outputs,
+    but it is not an entailment or semantic-support check.
     """
-    response_words = set(response.lower().split())
-    context_words = set(context.lower().split())
+    response_words = set(re.findall(r"\b[\w'-]+\b", response.lower()))
+    context_words = set(re.findall(r"\b[\w'-]+\b", context.lower()))
     content_overlap = [w for w in (response_words & context_words) if len(w) > 3]
 
     if len(content_overlap) < 3:
@@ -114,4 +242,10 @@ def _apply_hallucination_guard(response: str, context: str) -> str:
     return response
 
 
-__all__ = ["build_engine", "answer_question", "load_model"]
+__all__ = [
+    "build_engine",
+    "answer_question",
+    "answer_question_structured",
+    "RAGResponse",
+    "load_model",
+]

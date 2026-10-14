@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "description": "Manually labelled retrieval questions grounded in the checked-in BF technical corpus.",
+  "questions": [
+    {
+      "id": "basicity-b2-definition",
+      "query": "How is binary basicity B2 calculated?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "basicity.txt", "section": "overview"}
+      ]
+    },
+    {
+      "id": "basicity-sinter-range",
+      "query": "What B2 range is typical for blast furnace sinter?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "basicity.txt", "section": "overview"}
+      ]
+    },
+    {
+      "id": "basicity-b4",
+      "query": "Which oxides are included in the quaternary B4 basicity formula?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "basicity.txt", "section": "overview"}
+      ]
+    },
+    {
+      "id": "basicity-ts",
+      "query": "How can increasing basicity affect the softening start temperature Ts?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "basicity.txt", "section": "effect on ts"}
+      ]
+    },
+    {
+      "id": "basicity-tmts",
+      "query": "What basicity range is associated with narrow Tm-Ts intervals?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "basicity.txt", "section": "effect on tm-ts"}
+      ]
+    },
+    {
+      "id": "cohesive-boundaries",
+      "query": "What do Ts and Tm mark at the boundaries of the cohesive zone?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "cohesive_zone.txt", "section": "overview"}
+      ]
+    },
+    {
+      "id": "cohesive-pressure-drop",
+      "query": "Why can a wide cohesive zone increase blast furnace pressure drop?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "cohesive_zone.txt", "section": "key mechanisms"}
+      ]
+    },
+    {
+      "id": "cohesive-width-values",
+      "query": "What Tm-Ts ranges are described as narrow or wide?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "cohesive_zone.txt", "section": "effect on tm-ts"}
+      ]
+    },
+    {
+      "id": "hydrogen-reactions",
+      "query": "What are the successive iron oxide reduction steps involving hydrogen?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "hydrogen_reduction.txt", "section": "overview"}
+      ]
+    },
+    {
+      "id": "hydrogen-kinetics",
+      "query": "Why can hydrogen diffuse and react faster than carbon monoxide in burden particles?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "hydrogen_reduction.txt", "section": "key mechanisms"}
+      ]
+    },
+    {
+      "id": "hydrogen-thermal-limit",
+      "query": "What thermal operating challenge results from endothermic hydrogen reduction?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "hydrogen_reduction.txt", "section": "key mechanisms"},
+        {"source": "hydrogen_reduction.txt", "section": "limitations"}
+      ]
+    },
+    {
+      "id": "reducibility-test",
+      "query": "What does a standard iron burden reducibility test measure and under what conditions?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "reducibility.txt", "section": "overview"}
+      ]
+    },
+    {
+      "id": "reducibility-rate-step",
+      "query": "Which step in the iron oxide reduction sequence is usually rate-limiting?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "reducibility.txt", "section": "key mechanisms"}
+      ]
+    },
+    {
+      "id": "reducibility-factors",
+      "query": "Which material properties influence iron burden reducibility?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "reducibility.txt", "section": "key mechanisms"}
+      ]
+    },
+    {
+      "id": "pellet-porosity",
+      "query": "How does pellet porosity affect reducing-gas access?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "pellet.txt", "section": "key mechanisms"}
+      ]
+    },
+    {
+      "id": "permeability-factors",
+      "query": "What factors affect gas permeability in the granular burden zone?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "permeability.txt", "section": "key mechanisms"}
+      ]
+    },
+    {
+      "id": "gas-ratios",
+      "query": "Which gas ratios express the reducing potential of the furnace atmosphere?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "gas_atmosphere.txt", "section": "key mechanisms"}
+      ]
+    },
+    {
+      "id": "feo-softening",
+      "query": "How does residual FeO influence the onset of softening?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "FeO.txt", "section": "key mechanisms"},
+        {"source": "FeO.txt", "section": "effect on ts"}
+      ]
+    },
+    {
+      "id": "cross-hydrogen-reducibility",
+      "query": "How do hydrogen kinetics and burden reducibility together influence the cohesive interval?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "hydrogen_reduction.txt", "section": "key mechanisms"},
+        {"source": "reducibility.txt", "section": "effect on tm-ts"}
+      ]
+    },
+    {
+      "id": "sinter-pellet-comparison",
+      "query": "How do sinter and pellets differ in porosity and the factors that support reducibility?",
+      "answerable": true,
+      "relevant_passages": [
+        {"source": "sinter.txt", "section": "key mechanisms"},
+        {"source": "pellet.txt", "section": "key mechanisms"},
+        {"source": "reducibility.txt", "section": "key mechanisms"}
+      ]
+    },
+    {
+      "id": "unanswerable-policy",
+      "query": "What Canadian government tax credit applies to a new steel plant built in 2025?",
+      "answerable": false,
+      "relevant_passages": [],
+      "unanswerable_reason": "The checked-in corpus contains blast-furnace and burden-material fundamentals, not Canadian tax policy."
+    },
+    {
+      "id": "unanswerable-plant-sample",
+      "query": "What was the measured slag composition in the user's plant sample yesterday?",
+      "answerable": false,
+      "relevant_passages": [],
+      "unanswerable_reason": "No plant sample or time-specific operating measurements are included in the document corpus."
+    }
+  ]
+}

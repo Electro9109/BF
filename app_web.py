@@ -51,7 +51,7 @@ from config.paths import DOCS_DIR, LLM_MODEL_DIR, ML_MODEL_DIR
 from config.retrieval import TOP_K
 
 from parse.core.contracts import SourceRef
-from pipeline.rag_pipeline import answer_question, build_engine, load_model
+from pipeline.rag_pipeline import answer_question_structured, build_engine, load_model
 
 MODEL_PATH = LLM_MODEL_DIR
 TOP_N = TOP_K
@@ -336,6 +336,7 @@ def init_session():
         "messages":           [],
         "last_query":         "",
         "last_matches":       [],
+        "last_rag_response":  None,
         "engine":             None,
         "chunks":             [],
         "engine_error":       None,
@@ -650,6 +651,7 @@ with st.sidebar:
         st.session_state.messages     = []
         st.session_state.last_query   = ""
         st.session_state.last_matches = []
+        st.session_state.last_rag_response = None
         st.rerun()
 
 
@@ -667,7 +669,7 @@ tab_rag, tab_pred, tab_eda = st.tabs(["🔍 RAG Chat", "🧮 Predictor", "📊 D
 
 def render_relevance(matches, placeholder):
     """
-    [rank]  source file  |  SECTION  |  score
+    [rank]  source file  |  SECTION  |  adjusted rank score
     progress bar
     first 120 chars of chunk content
     """
@@ -686,7 +688,7 @@ def render_relevance(matches, placeholder):
                 f"**[{i}] {source}**&nbsp;&nbsp;"
                 f"<span style='color:var(--text-tertiary)'>|&nbsp;&nbsp;"
                 f"<code style='font-size:0.78em'>{section}</code>"
-                f"&nbsp;&nbsp;|&nbsp;&nbsp;{score:.4f}</span>",
+                f"&nbsp;&nbsp;|&nbsp;&nbsp;rank score {score:.4f}</span>",
                 unsafe_allow_html=True,
             )
             st.progress(norm)
@@ -731,13 +733,15 @@ with tab_rag:
             with st.chat_message("assistant"):
                 st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
+            st.session_state.last_rag_response = None
             st.stop()
 
         if not model_ok:
             response, matches = "LLM not ready. RAG chat is unavailable.", []
+            rag_response = None
         else:
             with st.spinner("Reading documents..."):
-                response, matches = answer_question(
+                rag_response = answer_question_structured(
                     question=user_prompt,
                     search_query=search_query,
                     engine=st.session_state.engine,
@@ -745,8 +749,10 @@ with tab_rag:
                     model=model_core,
                     top_n=TOP_N,
                 )
+            response, matches = rag_response.answer, rag_response.matches
 
         st.session_state.last_matches = matches
+        st.session_state.last_rag_response = rag_response
         render_relevance(matches, relevance_placeholder)
 
         with st.chat_message("assistant"):

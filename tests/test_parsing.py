@@ -47,6 +47,90 @@ def test_section_parser_discards_short_and_reference_sections():
     assert extract_topic(text, "fallback") == "reducibility"
 
 
+def test_section_parser_preserves_prose_before_first_explicit_marker():
+    sections = split_into_sections(
+        "This introductory warning applies to all operating conditions.\n"
+        "SECTION: mechanism\n"
+        "The reduction mechanism uses carbon monoxide under controlled conditions."
+    )
+
+    assert [section["section"] for section in sections] == ["introduction", "mechanism"]
+    assert "introductory warning" in sections[0]["content"]
+
+
+@pytest.mark.parametrize(
+    ("heading", "content"),
+    [
+        ("threshold", "Threshold: 1.6 to 2.2."),
+        ("definition", "Basicity is CaO divided by SiO2."),
+        ("warning", "Warning: excess hydrogen increases heat demand."),
+        ("overview", "A short meaningful sentence."),
+    ],
+)
+def test_section_parser_keeps_short_technical_sections(heading, content):
+    sections = split_into_sections(f"SECTION: {heading}\n{content}")
+
+    assert sections == [{"section": heading, "content": content}]
+
+
+def test_section_parser_still_discards_junk_sections():
+    sections = split_into_sections(
+        "SECTION: overview\nA short meaningful sentence.\n"
+        "SECTION: references\nA short citation."
+    )
+
+    assert sections == [{"section": "overview", "content": "A short meaningful sentence."}]
+
+
+def test_legacy_heading_parser_preserves_preamble_and_short_sections():
+    sections = split_into_sections(
+        "An introductory warning applies throughout this document.\n"
+        "OVERVIEW\n"
+        "Basicity is CaO divided by SiO2.\n"
+        "REFERENCES\n"
+        "A short citation."
+    )
+
+    assert [section["section"] for section in sections] == ["introduction", "overview"]
+    assert "introductory warning" in sections[0]["content"]
+    assert sections[1]["content"] == "Basicity is CaO divided by SiO2."
+
+
+def test_legacy_heading_parser_does_not_treat_uppercase_sentence_as_heading():
+    sections = split_into_sections(
+        "OVERVIEW\n"
+        "THIS IS AN ORDINARY SENTENCE, NOT A SECTION HEADING.\n"
+        "Basicity describes a ratio of basic to acidic oxides."
+    )
+
+    assert len(sections) == 1
+    assert "THIS IS AN ORDINARY SENTENCE" in sections[0]["content"]
+
+
+def test_legacy_heading_parser_preserves_long_unpunctuated_uppercase_prose():
+    sentence = "CO REDUCTION BECOMES FASTER AT HIGHER TEMPERATURE"
+    sections = split_into_sections(
+        f"OVERVIEW\n{sentence}\nThe reaction rate depends on the gas atmosphere."
+    )
+
+    assert sections == [{
+        "section": "overview",
+        "content": f"{sentence} The reaction rate depends on the gas atmosphere.",
+    }]
+
+
+def test_legacy_heading_parser_supports_markdown_headings():
+    sections = split_into_sections(
+        "## Mechanism\n"
+        "A short technical note is preserved."
+    )
+
+    assert sections == [{
+        "section": "mechanism",
+        "content": "A short technical note is preserved.",
+    }]
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [

@@ -7,7 +7,7 @@ import argparse
 
 from config.paths import DOCS_DIR, LLM_MODEL_DIR
 from config.retrieval import TOP_K
-from pipeline.rag_pipeline import answer_question, build_engine, load_model
+from pipeline.rag_pipeline import answer_question_structured, build_engine, load_model
 
 
 def main() -> None:
@@ -20,7 +20,7 @@ def main() -> None:
         raise SystemExit(f"No .txt documents found in {DOCS_DIR}")
 
     tokenizer, model = load_model(LLM_MODEL_DIR)
-    answer, matches = answer_question(
+    result = answer_question_structured(
         question=args.question,
         search_query=args.question,
         engine=engine,
@@ -29,9 +29,9 @@ def main() -> None:
         top_n=TOP_K,
     )
 
-    print(answer)
+    print(result.answer)
     print("\nSources:")
-    for chunk, score in matches:
+    for chunk, score in result.matches:
         print(f"- {chunk.source} ({score:.3f})")
 
 

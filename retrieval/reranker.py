@@ -2,7 +2,9 @@
 retrieval/reranker.py
 ─────────────────────────
 Post-FAISS score adjustment based on section metadata. FAISS remains the
-primary ranker; this is a small nudge, not an override.
+primary ranker; this is a small nudge, not an override. Returned scores are
+adjusted ranking scores for explanatory queries, not raw cosine values or
+calibrated confidence.
 """
 
 from config.retrieval import (
@@ -12,17 +14,18 @@ from config.retrieval import (
     LOW_VALUE_PENALTY,
 )
 from config.retrieval_domain import EXPLANATORY_SECTIONS
+from data.schemas import Chunk
 
 
 def rerank_by_section(
     query: str,
-    results: list[tuple[dict, float]],
+    results: list[tuple[Chunk, float]],
     explanatory_sections=None,
     low_value_sections=None,
     explanatory_keywords=None,
     explanatory_boost: float = EXPLANATORY_BOOST,
     low_value_penalty: float = LOW_VALUE_PENALTY,
-) -> list[tuple[dict, float]]:
+) -> list[tuple[Chunk, float]]:
     """
     For explanatory-style queries, boost chunks from high-value sections
     (overview, mechanism, ...) and penalise low-value sections
@@ -45,9 +48,9 @@ def rerank_by_section(
     for chunk, score in results:
         section = chunk.section.lower()
         if any(s in section for s in explanatory_sections):
-            adjusted = score * explanatory_boost
+            adjusted = score + abs(score) * (explanatory_boost - 1)
         elif any(s in section for s in low_value_sections):
-            adjusted = score * low_value_penalty
+            adjusted = score + abs(score) * (low_value_penalty - 1)
         else:
             adjusted = score
         reranked.append((chunk, adjusted))

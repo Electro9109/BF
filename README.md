@@ -4,7 +4,7 @@ A modular data and decision-support platform for metallurgical operations and te
 
 PARSE provides:
 - 📊 **Data Explorer + Cleaner** — profile CSV/Excel datasets, review quality issues, and apply approved traceable cleaning proposals
-- 🔍 **RAG Chat** — query metallurgical PDF/text documents with a local LLM
+- 🔍 **RAG Chat** — query metallurgical `.txt` documents with a local LLM
 - 🧮 **ML Predictor** — estimate softening (Ts) and melting (Tm, Tm−Ts) temperatures from burden chemistry, gas atmosphere, and burden composition
 - 🤖 **Explainer LLM** — translate structured analysis findings into clear, natural language explanations with fidelity validation
 - 🏗️ **Core Contracts** — reusable Processing, Retrieval, Analysis, Synthesis, and Evaluation protocols for extensible workflows
@@ -75,7 +75,7 @@ full shared database.
 
 | Item | Where to place it |
 |---|---|
-| Metallurgical theory docs (`.txt`) | `docs/` — each file needs `TOPIC:` and `SECTION:` header lines |
+| Metallurgical theory docs (`.txt`) | `docs/` — optional `TOPIC:` line; use `SECTION:` markers or supported Markdown/uppercase headings |
 | Sentence-embedding model weights | `EmbedModels/` — see [Embedding model](#changing-the-embedding-model) |
 | Chat / generation LLM weights | `LocalModels/` — see [Changing the LLM](#changing-the-llm) |
 | Raw experimental data | `data_files/data_result.xlsx` — sheet `Data Analysis` |

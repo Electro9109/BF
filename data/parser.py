@@ -28,7 +28,13 @@ from config.retrieval import JUNK_HEADINGS
 # Matches lines that look like section headings (legacy format):
 #   ALL CAPS LINES  (e.g. "EFFECT ON Tm-Ts")
 #   Markdown headers  (e.g. "## Overview")
-_HEADING_RE = re.compile(r"^(#{1,4} .+|[A-Z][A-Z0-9 \-\/]{3,})$", re.MULTILINE)
+_MARKDOWN_HEADING_RE = re.compile(r"^#{1,4}\s+\S.+$")
+_UPPERCASE_HEADING_RE = re.compile(r"^[A-Z][A-Z0-9 \-/]{3,}$")
+_KNOWN_HEADING_RE = re.compile(
+    r"^(?:overview|key mechanisms|advantages|limitations|references|"
+    r"effect on T(?:s|m|m-Ts))(?:\s*[\(:-].*)?$",
+    re.IGNORECASE,
+)
 
 # Matches "SECTION: <name>" markers (new format)
 _SECTION_MARKER_RE = re.compile(r"^SECTION:\s*(.+?)\s*$", re.MULTILINE | re.IGNORECASE)
@@ -40,27 +46,43 @@ def _is_junk_section(section_label: str) -> bool:
     return any(label == j or label.startswith(j) for j in JUNK_HEADINGS)
 
 
+def _is_heading_line(line: str) -> bool:
+    stripped = line.strip()
+    return bool(
+        _MARKDOWN_HEADING_RE.fullmatch(stripped)
+        or (
+            _UPPERCASE_HEADING_RE.fullmatch(stripped)
+            and len(stripped) <= 48
+            and len(stripped.split()) <= 5
+        )
+        or _KNOWN_HEADING_RE.fullmatch(stripped)
+    )
+
+
+def _append_section(sections: list[dict], section_label: str, content: str) -> None:
+    clean_content = " ".join(content.split())
+    if clean_content and not _is_junk_section(section_label):
+        sections.append({"section": section_label, "content": clean_content})
+
+
 def _split_by_section_markers(text: str) -> list[dict]:
     """
     Split text on "SECTION: <name>" markers.
 
     Returns a list of {"section": <label>, "content": <body>} dicts,
-    excluding junk sections and trivially short bodies.
+    excluding junk sections and empty bodies.
     """
     parts = _SECTION_MARKER_RE.split(text)
     # parts = [preamble, name1, body1, name2, body2, ...]
 
     sections = []
+    if parts[0].strip():
+        _append_section(sections, "introduction", parts[0])
     for i in range(1, len(parts), 2):
         section_name = parts[i].strip().lower()
         content = parts[i + 1].strip() if i + 1 < len(parts) else ""
 
-        if _is_junk_section(section_name):
-            continue
-        if len(content.split()) <= 8:
-            continue
-
-        sections.append({"section": section_name, "content": content})
+        _append_section(sections, section_name, content)
 
     return sections
 
@@ -73,20 +95,24 @@ def _split_by_headings(text: str) -> list[dict]:
 
     Returns a list of {"section": <label>, "content": <body>} dicts.
     """
-    boundaries = [m.start() for m in _HEADING_RE.finditer(text)]
+    boundaries = [
+        match.start()
+        for match in re.finditer(r"^.*$", text, re.MULTILINE)
+        if _is_heading_line(match.group())
+    ]
 
-    if len(boundaries) < 2:
-        # No clear heading structure at all - treat whole file as one
-        # section per non-trivial paragraph, labelled "body".
+    if not boundaries:
+        # No heading structure: preserve each non-empty paragraph as body.
         sections = []
         for para in re.split(r"\n\s*\n", text):
-            clean = " ".join(para.split())
-            if len(clean.split()) > 8:
-                sections.append({"section": "body", "content": clean})
+            _append_section(sections, "body", para)
         return sections
 
-    boundaries.append(len(text))
     sections = []
+    if text[:boundaries[0]].strip():
+        _append_section(sections, "introduction", text[:boundaries[0]])
+
+    boundaries.append(len(text))
     for i in range(len(boundaries) - 1):
         block = text[boundaries[i]: boundaries[i + 1]].strip()
         if not block:
@@ -95,14 +121,7 @@ def _split_by_headings(text: str) -> list[dict]:
         first_line = block.splitlines()[0].strip().lower().lstrip("# ")
         section_label = first_line[:40]
         body = "\n".join(block.splitlines()[1:]).strip()
-        body = " ".join(body.split())
-
-        if _is_junk_section(section_label):
-            continue
-        if len(body.split()) <= 8:
-            continue
-
-        sections.append({"section": section_label, "content": body})
+        _append_section(sections, section_label, body)
 
     return sections
 
@@ -116,9 +135,9 @@ def split_into_sections(text: str) -> list[dict]:
     older files keep working during migration.
 
     Returns a list of {"section": <label>, "content": <body>} dicts,
-    with junk sections (REFERENCES, LIMITATIONS-for-explanatory, etc.
-    handled separately by the reranker - only true junk headings like
-    REFERENCES are dropped here) already removed.
+    with junk headings such as REFERENCES already removed. Short non-empty
+    sections are retained because thresholds, definitions, and warnings can
+    be meaningful evidence.
     """
     if _SECTION_MARKER_RE.search(text):
         return _split_by_section_markers(text)

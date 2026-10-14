@@ -7,10 +7,27 @@ rag_engine.py - extracted with no behavioural changes other than the
 bug repairs documented in data/parser.py.
 """
 
+import logging
 from pathlib import Path
 
 from data.parser import extract_topic, split_into_sections, strip_topic_header
 from data.schemas import Chunk
+
+logger = logging.getLogger(__name__)
+
+
+def _read_document_text(file_path: Path) -> str:
+    raw = file_path.read_bytes()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16")
+
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError as utf8_error:
+        text = raw.decode("cp1252")
+        if any(ord(char) < 32 and char not in "\n\r\t\f" for char in text):
+            raise utf8_error
+        return text
 
 
 def load_and_chunk_data(docs_dir: str, strict: bool = False) -> list[Chunk]:
@@ -42,10 +59,15 @@ def load_and_chunk_data(docs_dir: str, strict: bool = False) -> list[Chunk]:
     chunks: list[Chunk] = []
     for file_path in sorted(path.rglob("*.txt")):
         try:
-            text = file_path.read_text(encoding="utf-8")
+            text = _read_document_text(file_path)
         except (OSError, UnicodeError) as exc:
             if strict:
-                raise ValueError(f"Could not read document: {file_path}") from exc
+                raise ValueError(f"Could not read document {file_path}: {exc}") from exc
+            logger.warning("Skipping unreadable document %s: %s", file_path, exc)
+            continue
+
+        if not text.strip():
+            logger.warning("Skipping empty document %s", file_path)
             continue
 
         rel_source = str(file_path.relative_to(path)).replace("\\", "/")
@@ -55,8 +77,12 @@ def load_and_chunk_data(docs_dir: str, strict: bool = False) -> list[Chunk]:
         # but never assigned at all).
         topic = extract_topic(text, file_path.stem)
         body = strip_topic_header(text)
+        sections = split_into_sections(body)
+        if not sections:
+            logger.warning("Document has no indexable sections: %s", file_path)
+            continue
 
-        for section in split_into_sections(body):
+        for section in sections:
             embed_text = (
                 f"TOPIC: {topic}\n"
                 f"SECTION: {section['section']}\n"

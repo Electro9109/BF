@@ -68,7 +68,11 @@ def retrieval_matches_to_result(
                     "retrieved_from",
                     locator=chunk.section,
                 ),
-                metadata={"source": chunk.source, "topic": chunk.topic},
+                metadata={
+                    "source": chunk.source,
+                    "topic": chunk.topic,
+                    "section": chunk.section,
+                },
             )
         )
     fallback = "no_matches" if not items else None
@@ -120,10 +124,20 @@ def answer_to_synthesis(
     retrieval: RetrievalResult,
     analyses: Iterable[AnalysisResult] = (),
     result_id: str = "bf-synthesis",
+    included_item_ids: Iterable[str] | None = None,
 ) -> SynthesisResult:
-    """Convert a grounded BF answer into a Core synthesis result."""
+    """Convert a BF answer into a Core synthesis result.
+
+    When supplied, ``included_item_ids`` limits evidence references to the
+    retrieved chunks that were actually included in the generation context.
+    """
     analysis_list = list(analyses)
-    evidence_refs = [item.evidence for item in retrieval.items]
+    included_ids = set(included_item_ids) if included_item_ids is not None else None
+    evidence_refs = [
+        item.evidence
+        for item in retrieval.items
+        if included_ids is None or item.item_id in included_ids
+    ]
     analysis_refs = [
         EvidenceRef(analysis.result_id, "derived_from")
         for analysis in analysis_list

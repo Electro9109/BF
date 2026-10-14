@@ -5,7 +5,7 @@ from config.paths import ML_MODEL_DIR
 from config.retrieval import TOP_K
 from ml.similarity import find_nearest_experiments
 from pipeline.prediction_pipeline import PredictionPipeline
-from pipeline.rag_pipeline import answer_question
+from pipeline.rag_pipeline import answer_question_structured
 
 
 def _build_explanation_query(result, nearest: list[dict]) -> str:
@@ -44,7 +44,7 @@ def explain_prediction(
     result = pipeline.run(**features)
     nearest = find_nearest_experiments(features["chemistry"], k=k)
     query = _build_explanation_query(result, nearest)
-    explanation, matches = answer_question(
+    rag_response = answer_question_structured(
         question=query,
         search_query=query,
         engine=engine,
@@ -56,8 +56,10 @@ def explain_prediction(
     return {
         "prediction": result.predictions,
         "nearest_experiments": nearest,
-        "explanation": explanation,
-        "retrieved_sources": matches,
+        "explanation": rag_response.answer,
+        "retrieved_sources": rag_response.matches,
+        "retrieval_result": rag_response.retrieval,
+        "synthesis_result": rag_response.synthesis,
         "query": query,
         "warnings": result.parser_warnings,
     }

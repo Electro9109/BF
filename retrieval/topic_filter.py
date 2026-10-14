@@ -2,13 +2,6 @@
 retrieval/topic_filter.py
 ────────────────────────────
 Pre-FAISS topic detection and candidate filtering.
-
-NOTE on the original bug ("Broken Topic-Routing Filter"): the old
-_detect_topic() returned a *list* of matched topics, but callers compared
-it to a chunk's topic string with `chunk["topic"] == matched_topic`
-(list == str is always False), so the topic filter never actually filtered
-anything. detect_topic() below returns a single canonical topic string
-(the first / most specific match) or None.
 """
 
 import re
@@ -23,22 +16,20 @@ def detect_topic(
     topic_keywords: Mapping[str, Sequence[str]] | None = None,
 ) -> str | None:
     """
-    Return a single canonical topic name if the query clearly targets one
-    topic, otherwise None (-> search all chunks).
+    Return a topic only when keywords identify exactly one canonical topic.
 
-    Keywords are checked in TOPIC_KEYWORDS dict order; within a topic,
-    longer/more specific phrases are listed first so e.g. "cohesive zone"
-    is matched before the bare "cohesive".
-
-    If multiple topics match, the first one encountered (dict order) wins.
-    If this produces unexpected results for ambiguous queries, reorder
-    TOPIC_KEYWORDS or tighten the keyword phrases.
+    Multiple topic matches are ambiguous and return None so candidate
+    filtering does not exclude relevant evidence from a cross-topic query.
     """
     keywords_by_topic = TOPIC_KEYWORDS if topic_keywords is None else topic_keywords
+    matched_topics = set()
     for topic, keywords in keywords_by_topic.items():
         for kw in keywords:
             if re.search(rf"\b{re.escape(kw)}\b", query_lower):
-                return topic
+                matched_topics.add(topic)
+                break
+    if len(matched_topics) == 1:
+        return next(iter(matched_topics))
     return None
 
 

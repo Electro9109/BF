@@ -33,6 +33,42 @@ def test_bf_retrieval_matches_become_core_evidence():
     assert result.items[0].score == 0.8
     assert result.items[0].evidence.relation == "retrieved_from"
     assert result.items[0].metadata["source"] == "sinter.txt"
+    assert result.items[0].metadata["section"] == "overview"
+
+
+def test_bf_synthesis_can_reference_only_chunks_used_in_context():
+    first = Chunk(
+        "First passage",
+        "First passage",
+        "experiments/experiment_scenarios.txt",
+        "experiments",
+        "overview",
+    )
+    second = Chunk(
+        "Second passage",
+        "Second passage",
+        "experiments/experiment_scenarios.txt",
+        "experiments",
+        "mechanism",
+    )
+    retrieval = retrieval_matches_to_result(
+        "explain experiments",
+        [(first, 0.91), (second, 0.82)],
+    )
+
+    synthesis = answer_to_synthesis(
+        "Generated answer.",
+        retrieval,
+        included_item_ids={retrieval.items[0].item_id},
+    )
+
+    assert len(retrieval.items) == 2
+    assert retrieval.items[0].item_id != retrieval.items[1].item_id
+    assert retrieval.items[0].metadata["source"] == "experiments/experiment_scenarios.txt"
+    assert retrieval.items[0].metadata["section"] == "overview"
+    assert [ref.ref_id for ref in synthesis.evidence_refs] == [
+        retrieval.items[0].item_id
+    ]
 
 
 def test_bf_prediction_and_answer_preserve_lineage():
