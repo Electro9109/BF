@@ -1,4 +1,5 @@
 import ast
+import json
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,7 @@ from parse.core import (
     SynthesisResult,
 )
 from parse.core import Analyzer, Evaluator, Processor, Retriever, Synthesizer
-from parse.core import run_workflow
+from parse.core import ResourceManifest, create_resource_manifest, run_workflow
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -98,6 +99,113 @@ def test_core_rejects_invalid_contract_values():
         Issue("problem", "critical", "Unsupported severity")
     with pytest.raises(ValueError, match="finite"):
         RetrievedEvidence("item", float("nan"), EvidenceRef("item", "retrieved_from"))
+
+
+def test_resource_manifest_creates_valid_json_and_round_trips(tmp_path):
+    source = SourceRef("source-7", "document", "docs/example.txt", "Example note")
+    provenance = Provenance(sources=[source], operation="manual_registration")
+    manifest_path = tmp_path / "resource_manifest.json"
+
+    manifest = create_resource_manifest(
+        {
+            "resource_class": "private_operational_data",
+            "content_type": "document",
+            "title": "Sinter process document",
+            "source": source.to_dict(),
+            "contexts": ["sinter", "reducibility"],
+            "provenance": provenance.to_dict(),
+            "processing_state": "registered",
+            "metadata": {"owner": "ops-team", "notes": "Example only"},
+        },
+        manifest_path,
+    )
+
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    restored = ResourceManifest.from_json(manifest_path)
+
+    assert isinstance(manifest, ResourceManifest)
+    assert manifest.resource_id == restored.resource_id
+    assert payload["resource_class"] == "private_operational_data"
+    assert payload["source"]["source_id"] == "source-7"
+    assert payload["contexts"] == ["sinter", "reducibility"]
+    assert payload["metadata"]["owner"] == "ops-team"
+    assert restored.title == "Sinter process document"
+
+
+def test_resource_manifest_reuses_stable_id_for_equivalent_resources(tmp_path):
+    source = SourceRef("source-8", "document", "docs/another.txt", "Another note")
+    metadata = {
+        "resource_class": "public_research",
+        "content_type": "document",
+        "title": "Public paper",
+        "source": source.to_dict(),
+        "contexts": ["reduction", "pellet"],
+    }
+
+    first = create_resource_manifest(metadata, tmp_path / "first.json")
+    second = create_resource_manifest(metadata, tmp_path / "second.json")
+
+    assert first.resource_id == second.resource_id
+    assert first.resource_id.startswith("public_research-")
+
+
+def test_resource_manifest_rejects_invalid_or_missing_fields(tmp_path):
+    with pytest.raises(ValueError, match="resource_class"):
+        create_resource_manifest({"content_type": "document", "title": "Missing type"}, tmp_path / "missing_class.json")
+
+    with pytest.raises(ValueError, match="content_type"):
+        create_resource_manifest({"resource_class": "public_dataset", "title": "Missing content"}, tmp_path / "missing_content.json")
+
+    with pytest.raises(TypeError, match="contexts"):
+        create_resource_manifest(
+            {
+                "resource_class": "internal_technical_document",
+                "content_type": "text",
+                "title": "Bad contexts",
+                "contexts": "not-a-list",
+            },
+            tmp_path / "bad_contexts.json",
+        )
+
+
+def test_resource_manifest_refuses_to_overwrite_existing_file(tmp_path):
+    manifest_path = tmp_path / "existing.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        create_resource_manifest(
+            {
+                "resource_class": "derived_analysis_result",
+                "content_type": "derived_artifact",
+                "title": "Existing file",
+            },
+            manifest_path,
+        )
+
+
+def test_resource_manifest_cleans_temp_file_on_write_failure(tmp_path, monkeypatch):
+    import parse.core.resource_manifest as resource_manifest_module
+
+    destination = tmp_path / "write_fail.json"
+
+    def raise_replace(_src, _dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(resource_manifest_module.os, "replace", raise_replace)
+
+    with pytest.raises(OSError, match="disk full"):
+        create_resource_manifest(
+            {
+                "resource_class": "public_dataset",
+                "content_type": "csv",
+                "title": "Dataset manifest",
+                "source": {"source_id": "dataset-9", "source_type": "csv", "locator": "public/data.csv"},
+            },
+            destination,
+        )
+
+    assert not destination.exists()
+    assert not (tmp_path / ".write_fail.json.tmp").exists()
 
 
 def test_core_has_no_forbidden_implementation_dependencies():

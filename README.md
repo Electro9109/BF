@@ -46,6 +46,27 @@ several minutes on CPU and does not require network access.
 > several minutes the first time. This is a one-time cost per session — subsequent
 > interactions are fast. A loading spinner is shown while this happens.
 
+## Resource storage scaffold
+
+The repository now includes a minimal storage scaffold under `storage/` to reserve
+space for private operational resources, public knowledge, shared manifest metadata,
+and derived artifacts without introducing a parallel architecture. The layout is
+implemented as explicit placeholders and README guidance rather than a full data
+store or retrieval layer.
+
+- `storage/private/` for approved internal operational records and metadata
+- `storage/public/` for external or public-resource references
+- `storage/catalogue/` for JSON manifests and shared metadata
+- `storage/normalized/` for extracted or normalized content
+- `storage/derived/` for derived outputs and reproducible artifacts
+
+A minimal JSON manifest writer is available in `parse/core/resource_manifest.py`.
+It reuses the existing `SourceRef` and `Provenance` contracts from
+`parse/core/contracts.py`, validates required fields, prevents silent overwrite,
+and writes a deterministic resource ID when one is not supplied. The scaffold does
+not yet implement unified retrieval, automatic public-resource ingestion, or a
+full shared database.
+
 ---
 
 ## Setup

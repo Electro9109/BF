@@ -16,6 +16,7 @@ from parse.core.contracts import (
 )
 from parse.core.department import Department
 from parse.core.operations import Analyzer, Evaluator, Processor, Retriever, Synthesizer
+from parse.core.resource_manifest import ResourceManifest, create_resource_manifest
 from parse.core.workflow import WorkflowResult, run_workflow
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "Provenance",
     "RetrievalResult",
     "RetrievedEvidence",
+    "ResourceManifest",
     "SourceRef",
     "SynthesisResult",
     "Department",
@@ -39,4 +41,5 @@ __all__ = [
     "Synthesizer",
     "WorkflowResult",
     "run_workflow",
+    "create_resource_manifest",
 ]
