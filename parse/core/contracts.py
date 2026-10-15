@@ -15,6 +15,7 @@ _SOURCE_TYPES = {
     "document",
     "csv",
     "spreadsheet",
+    "json",
     "user_input",
     "model",
     "generated_output",

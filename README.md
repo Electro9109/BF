@@ -29,7 +29,7 @@ streamlit run app_web.py
 
 The verified prototype URL is `http://localhost:8501` when Streamlit uses its default port.
 The interface provides Data Ingestion, RAG Chat, and the Sinter predictor. Data Ingestion stages
-CSV/Excel or text uploads without adding them to the catalogue. Tabular inputs are analysed read-only,
+CSV/Excel, flat JSON/JSON Lines, or text uploads without adding them to the catalogue. Tabular inputs are analysed read-only,
 prioritize analyzer findings and applicable workflow suggestions, and display
 their existing supporting values. Validated plain-language explanations are primary, with source findings,
 statistics, and validation details kept available as secondary detail. Limitations and the controlled
@@ -53,30 +53,48 @@ several minutes on CPU and does not require network access.
 
 ## Source storage and catalogue
 
-The **Data Ingestion** tab registers `.txt`, `.csv`, `.xlsx`, and `.xls` files in
-the local PARSE catalogue only after explicit confirmation. Originals are
-retained byte-for-byte, source identity is derived from content and source type,
-and repeated uploads add source locations instead of overwriting another source.
-Tabular files are retained as catalogue artifacts; text sources are added to the
-existing retrieval index and are marked indexed only after inclusion is verified.
-Processing status, index failures, missing-value issues, and normalized artifacts
-are available in the catalogue inspection area at the bottom of the workflow.
+The **Data Ingestion** tab accepts `.txt`, `.csv`, `.xlsx`, `.xls`, `.json`, and
+`.jsonl` files (up to 100 MiB) and registers them only after explicit confirmation.
+JSON datasets must be flat arrays of records or JSON Lines objects; nested values,
+duplicate keys, and malformed data are rejected. Excel input currently normalizes
+the first worksheet only. The uploaded workbook remains byte-for-byte intact, available sheet names are recorded, and
+additional sheets produce a visible warning. Validated CSV bytes remain
+byte-for-byte unchanged in the normalized artifact; Excel/JSON tables convert
+to CSV with the conversion recorded. TXT documents normalize to indexed text.
+
+Original bytes are retained separately. Exact duplicate checks use the SHA-256
+of the original bytes, not the filename, and then verify that the source type and
+classification are compatible. A mismatch is blocked with an explicit conflict;
+content-equivalence checks across differently formatted datasets are not implemented. The SQLite
+catalogue's `manifest_json` is the authoritative JSON representation of each
+`ResourceManifest`; it references, but does not embed, data artifacts. Processing
+stage and index failures remain distinct in manifest metadata. `SourceCatalogue.reconcile()`
+checks referenced originals and normalized artifacts against their hashes and
+reports inconsistencies without deleting files.
+
+Tabular registration does not imply analysis approval or suitability for ML
+training. The existing Data Ingestion review controls optional EDA and approved
+cleaning; originals are never modified, and derived selected datasets remain
+separate. Only normalized text documents are sent to the existing RAG index,
+and the UI marks them indexed only after verifying their chunks.
 
 - `storage/private/originals/` and `storage/public/originals/` retain categorized
   original files locally.
 - `storage/catalogue/sources.sqlite3` stores compact resource manifests,
   locations, issues, and artifact references; it does not store dataset rows.
 - `storage/normalized/` contains parsed text documents and normalized tabular
-  artifacts. Registered text documents are included in the existing RAG index.
+  CSV artifacts. Registered text documents are included in the existing RAG index.
 - `storage/derived/` remains available for reproducible analysis outputs.
 
-The `parse.source_catalogue.SourceCatalogue` API supports local files through
-`register_file()` and direct uploads through `register_upload()`. The guided UI
-uses `register_confirmed_upload()` after review and explicit approval. Duplicate
-content cannot be assigned conflicting resource categories. The registry
-reuses PARSE `ResourceManifest`, `SourceRef`, `Provenance`, `Issue`, and
-`KnowledgeItem` contracts. Runtime catalogue files are ignored by Git. It does
-not implement public web crawling, cloud storage, or permissions management.
+The `parse.source_catalogue.SourceCatalogue` supports local files through
+`register_file()` and uploads through `register_upload()`. The guided UI uses
+`register_confirmed_upload()` after review and explicit approval. `find_duplicate()`
+provides a verified exact-duplicate preflight; `reconcile()` reports missing or
+hash-mismatched artifacts. The registry reuses PARSE `ResourceManifest`,
+`SourceRef`, `Provenance`, `Issue`, and `KnowledgeItem` contracts. Public/private
+folders are organizational classifications, not access controls. Runtime
+catalogue files are ignored by Git. Cloud storage, web crawling, permissions
+management, and automatic content-equivalence detection are not implemented.
 
 ---
 

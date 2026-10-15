@@ -11,12 +11,15 @@ from data.loader import decode_document_bytes
 from data.parser import extract_topic, split_into_sections, strip_topic_header
 from data.schemas import Chunk
 from parse.core.contracts import SourceRef
+from parse.eda_ui import MAX_SOURCE_BYTES
 
 _SOURCE_TYPES = {
     ".txt": "document",
     ".csv": "csv",
     ".xlsx": "spreadsheet",
     ".xls": "spreadsheet",
+    ".json": "json",
+    ".jsonl": "json",
 }
 _WORKFLOW_INVALIDATION_KEYS = (
     "eda_result",
@@ -53,11 +56,17 @@ def create_staged_upload(
 ) -> StagedUpload:
     if not isinstance(content, bytes):
         raise TypeError("content must be bytes")
+    if len(content) > MAX_SOURCE_BYTES:
+        raise ValueError(
+            f"Source files must be no larger than {MAX_SOURCE_BYTES // (1024 * 1024)} MiB."
+        )
     if not isinstance(filename, str) or not filename.strip():
         raise ValueError("filename must be a non-empty string")
     source_type = _SOURCE_TYPES.get(Path(filename).suffix.lower())
     if source_type is None:
-        raise ValueError("Supported source files are .txt, .csv, .xlsx, and .xls")
+        raise ValueError(
+            "Supported source files are .txt, .csv, .xlsx, .xls, .json, and .jsonl"
+        )
     content_hash = hashlib.sha256(content).hexdigest()
     source_id = hashlib.sha256(source_type.encode("utf-8") + b"\0" + content).hexdigest()
     label = (display_name or filename).strip()

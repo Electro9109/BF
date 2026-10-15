@@ -38,7 +38,7 @@ Identifies an origin of information.
 ```text
 SourceRef
 - source_id: stable string
-- source_type: document | csv | spreadsheet | user_input | model | generated_output
+- source_type: document | csv | spreadsheet | json | user_input | model | generated_output
 - locator: optional path, row, section, chunk, or external identifier
 - label: optional human-readable name
 ```
@@ -105,6 +105,15 @@ final-artifact hash, review decisions, validation results, and unresolved issues
 Text resources move to `indexed` only after the existing retrieval engine has
 been rebuilt and the registered source is verified in its chunks; tabular
 resources remain catalogue artifacts and are not added to text retrieval.
+
+The catalogue's serialized `ResourceManifest` JSON is authoritative; the
+filesystem stores originals and normalized artifacts. Exact duplicate
+preflight verifies the original SHA-256 and blocks reuse when the requested
+resource classification conflicts. JSON/JSON Lines tabular inputs are limited
+to flat records and normalize to CSV; Excel currently selects the first sheet
+while preserving the complete original workbook and reporting any other sheets.
+Catalogue reconciliation verifies referenced file hashes and reports failures
+without deleting originals or derived data.
 
 ## 3. Knowledge Envelopes
 

@@ -7,9 +7,12 @@ import json
 import os
 import re
 import sqlite3
+import tempfile
 import zipfile
 from contextlib import closing
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +32,8 @@ _SOURCE_TYPES = {
     ".csv": ("csv", "private_operational_data"),
     ".xlsx": ("spreadsheet", "private_operational_data"),
     ".xls": ("spreadsheet", "private_operational_data"),
+    ".json": ("json", "private_operational_data"),
+    ".jsonl": ("json", "private_operational_data"),
 }
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
@@ -38,6 +43,18 @@ class CatalogueEntry:
     manifest: ResourceManifest
     source_locations: list[str]
     artifacts: list[KnowledgeItem]
+
+
+@dataclass(frozen=True)
+class DuplicateResult:
+    duplicate_type: str
+    existing_resource_id: str
+    existing_artifact_location: str
+    physical_storage_reused: bool
+    new_source_record_created: bool
+    classification_conflict: str | None
+    artifact_verified: bool
+    recommended_action: str
 
 
 class SourceIngestionError(RuntimeError):
@@ -50,6 +67,10 @@ class SourceIngestionError(RuntimeError):
 
 class SourceCategoryConflict(ValueError):
     """Identical content is already registered under a different category."""
+
+
+class SourceIntegrityError(RuntimeError):
+    """A stored source artifact no longer matches its catalogue hash."""
 
 
 class SourceCatalogue:
@@ -120,15 +141,106 @@ class SourceCatalogue:
             source_type, resource_class = _SOURCE_TYPES[extension]
         except KeyError as exc:
             raise ValueError(
-                "Supported source files are .txt, .csv, .xlsx, and .xls"
+                "Supported source files are .txt, .csv, .xlsx, .xls, .json, and .jsonl"
             ) from exc
         content_type = {
             ".txt": "document",
             ".csv": "csv",
             ".xlsx": "spreadsheet",
             ".xls": "spreadsheet",
+            ".json": "json",
+            ".jsonl": "json",
         }[extension]
         return source_type, resource_class, content_type
+
+    def _original_path(self, manifest: ResourceManifest) -> tuple[str, Path]:
+        scope = str(manifest.metadata.get("original_storage_scope", "private"))
+        root = self.public_originals_dir if scope == "public" else self.originals_dir
+        relative = Path(str(manifest.metadata["preserved_original"]))
+        path = (root / relative).resolve()
+        if root.resolve() not in path.parents:
+            raise ValueError("Catalogue original path escapes its configured storage root")
+        return scope, path
+
+    def find_duplicate(
+        self,
+        filename: str,
+        content: bytes,
+        *,
+        resource_class: str | None = None,
+    ) -> DuplicateResult | None:
+        """Find exact uploaded bytes and verify their type/classification context."""
+        if not isinstance(content, bytes):
+            raise TypeError("content must be bytes")
+        from parse.eda_ui import MAX_SOURCE_BYTES
+
+        if len(content) > MAX_SOURCE_BYTES:
+            raise ValueError(
+                f"Source files must be no larger than {MAX_SOURCE_BYTES // (1024 * 1024)} MiB."
+            )
+        safe_filename = self._safe_filename(filename)
+        source_type, default_class, _ = self._source_type(safe_filename)
+        classification = resource_class or default_class
+        if not self.database_path.is_file():
+            return None
+        digest = hashlib.sha256(content).hexdigest()
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT source_type, manifest_json FROM resources "
+                "WHERE content_hash = ? ORDER BY resource_id",
+                (digest,),
+            ).fetchall()
+        if not rows:
+            return None
+
+        manifest = ResourceManifest.from_dict(json.loads(rows[0]["manifest_json"]))
+        scope, original_path = self._original_path(manifest)
+        verified = (
+            original_path.is_file()
+            and original_path.stat().st_size == len(content)
+            and hashlib.sha256(original_path.read_bytes()).hexdigest() == digest
+        )
+        conflict = None
+        if manifest.resource_class != classification:
+            conflict = (
+                f"Existing source is classified as {manifest.resource_class!r}; "
+                f"the requested classification is {classification!r}."
+            )
+        if rows[0]["source_type"] != source_type:
+            type_conflict = (
+                f"Exact bytes are already registered as "
+                f"{rows[0]['source_type']!r}, not {source_type!r}."
+            )
+            conflict = f"{conflict} {type_conflict}" if conflict else type_conflict
+        if len(rows) > 1:
+            conflict = (
+                "Legacy catalogue entries exist for these exact bytes under multiple "
+                "source types; reconcile the registrations before reuse."
+                if conflict is None
+                else f"{conflict} Multiple legacy registrations also exist for these bytes."
+            )
+        if conflict is not None and not verified:
+            action = "Resolve the classification conflict and reconcile the stored original."
+        elif conflict is not None:
+            action = "Resolve the classification conflict."
+        elif not verified:
+            action = (
+                "Run catalogue reconciliation; the preserved original is missing or has changed."
+            )
+        else:
+            action = "Reuse the existing source."
+        return DuplicateResult(
+            duplicate_type="exact_file",
+            existing_resource_id=manifest.resource_id,
+            existing_artifact_location=(
+                f"{scope}/originals/{manifest.metadata['preserved_original']}"
+            ),
+            physical_storage_reused=verified,
+            new_source_record_created=False,
+            classification_conflict=conflict,
+            artifact_verified=verified,
+            recommended_action=action,
+        )
 
     def _originals_root(self, resource_class: str) -> tuple[str, Path]:
         if resource_class in {"public_research", "public_dataset", "standards_reference"}:
@@ -145,9 +257,21 @@ class SourceCatalogue:
         path = Path(source_path)
         if not path.is_file():
             raise FileNotFoundError(f"Source file does not exist: {path}")
+        from parse.eda_ui import MAX_SOURCE_BYTES
+
+        if path.stat().st_size > MAX_SOURCE_BYTES:
+            raise ValueError(
+                f"Source files must be no larger than {MAX_SOURCE_BYTES // (1024 * 1024)} MiB."
+            )
+        with path.open("rb") as handle:
+            content = handle.read(MAX_SOURCE_BYTES + 1)
+        if len(content) > MAX_SOURCE_BYTES:
+            raise ValueError(
+                f"Source files must be no larger than {MAX_SOURCE_BYTES // (1024 * 1024)} MiB."
+            )
         return self.register_upload(
             path.name,
-            path.read_bytes(),
+            content,
             title=title,
             resource_class=resource_class,
             source_location=str(path.resolve()),
@@ -164,6 +288,12 @@ class SourceCatalogue:
     ) -> CatalogueEntry:
         if not isinstance(content, bytes):
             raise TypeError("content must be bytes")
+        from parse.eda_ui import MAX_SOURCE_BYTES
+
+        if len(content) > MAX_SOURCE_BYTES:
+            raise ValueError(
+                f"Source files must be no larger than {MAX_SOURCE_BYTES // (1024 * 1024)} MiB."
+            )
         safe_filename = self._safe_filename(filename)
         source_type, default_resource_class, content_type = self._source_type(safe_filename)
         resource_class = resource_class or default_resource_class
@@ -199,6 +329,8 @@ class SourceCatalogue:
                 "content_sha256": content_hash,
                 "byte_size": len(content),
                 "original_filename": safe_filename,
+                "original_file_type": Path(safe_filename).suffix.lower(),
+                "detected_file_type": content_type,
                 "original_storage_scope": original_scope,
                 "preserved_original": str(Path(resource_id) / safe_filename),
             },
@@ -206,14 +338,28 @@ class SourceCatalogue:
         original_path = original_root / resource_id / safe_filename
 
         with closing(self._connect()) as connection, connection:
-            row = connection.execute(
-                "SELECT manifest_json FROM resources WHERE source_type = ? AND content_hash = ?",
-                (source_type, content_hash),
-            ).fetchone()
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                "SELECT source_type, manifest_json FROM resources "
+                "WHERE content_hash = ? ORDER BY resource_id",
+                (content_hash,),
+            ).fetchall()
+            if len(rows) > 1:
+                raise SourceCategoryConflict(
+                    "Identical bytes have multiple legacy catalogue registrations; "
+                    "reconcile them before registering another source."
+                )
+            row = rows[0] if rows else None
             if row is not None:
                 existing_manifest = ResourceManifest.from_dict(
                     json.loads(row["manifest_json"])
                 )
+                if row["source_type"] != source_type:
+                    raise SourceCategoryConflict(
+                        "Identical source bytes are already registered as "
+                        f"{row['source_type']!r}; they cannot also be registered as "
+                        f"{source_type!r}."
+                    )
                 if existing_manifest.resource_class != resource_class:
                     raise SourceCategoryConflict(
                         "Identical source content is already registered as "
@@ -240,19 +386,19 @@ class SourceCatalogue:
                         f"This content is already registered as "
                         f"{manifest.resource_class!r}, not {resource_class!r}."
                     )
-                original_name = str(
-                    manifest.metadata.get("original_filename", safe_filename)
-                )
-                stored_scope = str(
-                    manifest.metadata.get("original_storage_scope", "private")
-                )
-                _, stored_root = self._originals_root(
-                    "public_dataset" if stored_scope == "public" else "private_operational_data"
-                )
-                self._write_immutable(
-                    stored_root / resource_id / original_name,
-                    content,
-                )
+                stored_scope, stored_path = self._original_path(manifest)
+                if stored_path.is_file():
+                    if hashlib.sha256(stored_path.read_bytes()).hexdigest() != content_hash:
+                        raise SourceIntegrityError(
+                            "The registered original does not match its catalogue hash."
+                        )
+                else:
+                    self._write_immutable(stored_path, content)
+                if stored_scope != original_scope:
+                    raise SourceCategoryConflict(
+                        "Identical source content is already stored in a different "
+                        "classification scope; explicit migration is required."
+                    )
             connection.execute(
                 "INSERT OR IGNORE INTO source_locations(resource_id, location) VALUES (?, ?)",
                 (resource_id, location),
@@ -262,13 +408,20 @@ class SourceCatalogue:
         if entry is None:
             raise RuntimeError(f"Registered source could not be read back: {resource_id}")
         if entry.manifest.processing_state in {"normalized", "indexed"} and entry.artifacts and all(
-            (self._artifact_path(item)).is_file() for item in entry.artifacts
+            self._artifact_is_valid(item) for item in entry.artifacts
         ):
             return entry
 
         manifest_source = entry.manifest.source
         if manifest_source is None:
             raise RuntimeError(f"Registered source has no SourceRef: {resource_id}")
+        self._update_manifest_metadata(
+            resource_id,
+            processing_stage="normalization",
+        )
+        entry = self.get_source(resource_id)
+        if entry is None:
+            raise RuntimeError(f"Registered source could not be read back: {resource_id}")
         try:
             artifact, artifact_path, metadata, issues = self._normalize(
                 str(entry.manifest.metadata.get("original_filename", safe_filename)),
@@ -293,6 +446,10 @@ class SourceCatalogue:
                 entry.manifest,
                 processing_state="failed",
                 issues=[issue],
+                metadata={
+                    "processing_stage": "normalization",
+                    "failure_kind": "validation" if isinstance(exc, ValueError) else "processing",
+                },
             )
             failed = self.get_source(resource_id)
             if failed is None:
@@ -308,19 +465,10 @@ class SourceCatalogue:
             entry.manifest,
             processing_state="normalized",
             derived_artifacts=[relative_artifact],
-            metadata=metadata,
+            metadata={"processing_stage": "normalized", **metadata},
             issues=issues,
+            artifact=artifact,
         )
-        with closing(self._connect()) as connection, connection:
-            connection.execute(
-                "INSERT OR REPLACE INTO artifacts(artifact_id, resource_id, item_json) "
-                "VALUES (?, ?, ?)",
-                (
-                    artifact.item_id,
-                    resource_id,
-                    json.dumps(artifact.to_dict(), ensure_ascii=False),
-                ),
-            )
         completed = self.get_source(resource_id)
         if completed is None:
             raise RuntimeError(f"Normalized source could not be read back: {resource_id}")
@@ -349,20 +497,6 @@ class SourceCatalogue:
             json.dumps(workflow_metadata or {}, ensure_ascii=False, default=str)
         )
         source_type, _default_class, _content_type = self._source_type(safe_filename)
-        if source_type == "document" and final_content is not None:
-            raise ValueError("Text document artifacts are produced by normalization")
-        if source_type in {"csv", "spreadsheet"} and final_content is None:
-            from parse.eda_ui import load_uploaded_dataset
-
-            frame, _source_ref = load_uploaded_dataset(safe_filename, original_content)
-            final_content = frame.to_csv(index=False, lineterminator="\n").encode("utf-8")
-        if source_type in {"csv", "spreadsheet"}:
-            if not isinstance(final_content, bytes):
-                raise TypeError("final_content must be bytes")
-            from parse.eda_ui import load_uploaded_dataset
-
-            load_uploaded_dataset("selected-artifact.csv", final_content)
-
         entry = self.register_upload(
             safe_filename,
             original_content,
@@ -370,25 +504,43 @@ class SourceCatalogue:
             resource_class=resource_class,
             source_location=source_location,
         )
+        resource_id = entry.manifest.resource_id
         if source_type == "document":
+            if final_content is not None:
+                error = "Text document artifacts are produced by normalization"
+                self.mark_registration_failed(resource_id, error)
+                raise ValueError(error)
             self._update_manifest_metadata(
-                entry.manifest.resource_id,
+                resource_id,
                 contexts=contexts or [],
                 workflow_metadata=workflow_metadata or {},
                 final_content_sha256=entry.manifest.metadata["content_sha256"],
                 processing_stage="normalized",
             )
-            return self.get_source(entry.manifest.resource_id) or entry
+            return self.get_source(resource_id) or entry
 
-        if final_content is None:
-            raise RuntimeError("Tabular normalization produced no final content")
         from parse.eda_ui import load_uploaded_dataset
 
-        final_frame, _ = load_uploaded_dataset("selected-artifact.csv", final_content)
+        try:
+            if source_type == "csv" and final_content is None:
+                final_content = original_content
+            elif final_content is None:
+                frame, _source_ref = load_uploaded_dataset(safe_filename, original_content)
+                final_content = frame.to_csv(
+                    index=False,
+                    lineterminator="\n",
+                    float_format="%.17g",
+                ).encode("utf-8")
+            if not isinstance(final_content, bytes):
+                raise TypeError("final_content must be bytes")
+            final_frame, _ = load_uploaded_dataset("selected-artifact.csv", final_content)
+        except (OSError, UnicodeError, ValueError, TypeError, ImportError, zipfile.BadZipFile) as exc:
+            self.mark_registration_failed(resource_id, str(exc))
+            raise
+
         final_hash = hashlib.sha256(final_content).hexdigest()
         relative_path = Path("datasets") / f"{entry.manifest.resource_id}-{final_hash[:16]}.csv"
         artifact_path = self.normalized_dir / relative_path
-        self._write_immutable(artifact_path, final_content)
         artifact_id = f"artifact-{entry.manifest.resource_id}-{final_hash[:16]}"
         missing_counts = {
             str(column): int(count)
@@ -415,7 +567,22 @@ class SourceCatalogue:
                 "row_count": len(final_frame.index),
                 "column_count": len(final_frame.columns),
                 "columns": [str(column) for column in final_frame.columns],
+                "inferred_types": {
+                    str(column): str(dtype)
+                    for column, dtype in final_frame.dtypes.items()
+                },
                 "missing_value_counts": missing_counts,
+                "normalized_format": "csv",
+                "validation": {
+                    "valid": True,
+                    "row_count": len(final_frame.index),
+                    "column_count": len(final_frame.columns),
+                },
+                "transformation_history": [
+                    "CSV validated and retained byte-for-byte"
+                    if source_type == "csv" and final_hash == entry.manifest.metadata["content_sha256"]
+                    else "reviewed tabular dataset exported to CSV"
+                ],
             },
             provenance=Provenance(
                 sources=[entry.manifest.source],
@@ -434,77 +601,44 @@ class SourceCatalogue:
             issues=issues,
             incomplete=bool(missing_counts),
         )
-        self._store_artifact(entry.manifest.resource_id, artifact)
-        self._update_manifest_metadata(
-            entry.manifest.resource_id,
-            contexts=contexts or [],
-            workflow_metadata=workflow_metadata or {},
-            final_content_sha256=final_hash,
-            selected_artifact=str(relative_path),
-            processing_state="normalized",
-            processing_stage="normalized",
-            issues=issues,
-        )
-        result = self.get_source(entry.manifest.resource_id)
-        if result is None:
-            raise RuntimeError(
-                f"Registered source could not be read back: {entry.manifest.resource_id}"
+        try:
+            self._write_immutable(artifact_path, final_content)
+            self._store_artifact(
+                resource_id,
+                artifact,
+                contexts=contexts or [],
+                workflow_metadata=workflow_metadata or {},
+                final_content_sha256=final_hash,
+                selected_artifact=str(relative_path),
+                processing_state="normalized",
+                processing_stage="normalized",
+                issues=issues,
             )
-        return result
-
-    def mark_indexed(self, resource_id: str) -> CatalogueEntry:
-        """Record successful document inclusion in the active retrieval index."""
-        self._set_processing_state(resource_id, "indexed", None)
-        entry = self.get_source(resource_id)
-        if entry is None:
-            raise KeyError(f"Unknown source resource: {resource_id}")
-        return entry
-
-    def mark_index_failed(self, resource_id: str, message: str) -> CatalogueEntry:
-        """Record a failed retrieval-index refresh without claiming success."""
-        entry = self.get_source(resource_id)
-        if entry is None:
-            raise KeyError(f"Unknown source resource: {resource_id}")
-        issue = Issue(
-            "retrieval_index_failed",
-            "error",
-            message,
-            source=entry.manifest.source,
-        )
-        self._set_processing_state(resource_id, "failed", issue)
+        except (OSError, ValueError, TypeError, sqlite3.Error, KeyError, RuntimeError) as exc:
+            self.mark_registration_failed(resource_id, str(exc))
+            raise
         result = self.get_source(resource_id)
         if result is None:
-            raise RuntimeError(f"Failed source could not be read back: {resource_id}")
-        return result
-
-    def _set_processing_state(
-        self,
-        resource_id: str,
-        state: str,
-        issue: Issue | None,
-    ) -> None:
-        entry = self.get_source(resource_id)
-        if entry is None:
-            raise KeyError(f"Unknown source resource: {resource_id}")
-        manifest = entry.manifest
-        manifest.processing_state = state
-        if issue is not None:
-            manifest.issues = [
-                existing
-                for existing in manifest.issues
-                if existing.code != issue.code
-            ] + [issue]
-        with closing(self._connect()) as connection, connection:
-            connection.execute(
-                "UPDATE resources SET manifest_json = ? WHERE resource_id = ?",
-                (json.dumps(manifest.to_dict(), ensure_ascii=False), resource_id),
+            raise RuntimeError(
+                f"Registered source could not be read back: {resource_id}"
             )
+        return result
 
     def _store_artifact(
         self,
         resource_id: str,
         artifact: KnowledgeItem,
+        *,
+        contexts: list[str],
+        workflow_metadata: dict[str, Any],
+        final_content_sha256: str,
+        selected_artifact: str,
+        processing_state: str,
+        processing_stage: str,
+        issues: list[Issue],
     ) -> None:
+        item_json = json.dumps(artifact.to_dict(), ensure_ascii=False)
+        json.dumps(workflow_metadata)
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 "SELECT manifest_json FROM resources WHERE resource_id = ?",
@@ -513,13 +647,20 @@ class SourceCatalogue:
             if row is None:
                 raise KeyError(f"Unknown source resource: {resource_id}")
             manifest = ResourceManifest.from_dict(json.loads(row["manifest_json"]))
+            manifest.contexts = list(contexts)
+            manifest.metadata["workflow"] = workflow_metadata
+            manifest.metadata["final_content_sha256"] = final_content_sha256
+            manifest.metadata["selected_artifact"] = selected_artifact
+            manifest.metadata["processing_stage"] = processing_stage
+            manifest.processing_state = processing_state
+            manifest.issues = list(issues)
             connection.execute(
-                "INSERT OR IGNORE INTO artifacts(artifact_id, resource_id, item_json) "
+                "INSERT OR REPLACE INTO artifacts(artifact_id, resource_id, item_json) "
                 "VALUES (?, ?, ?)",
                 (
                     artifact.item_id,
                     resource_id,
-                    json.dumps(artifact.to_dict(), ensure_ascii=False),
+                    item_json,
                 ),
             )
             relative_path = str(artifact.attributes["path"])
@@ -679,10 +820,17 @@ class SourceCatalogue:
             if hashlib.sha256(path.read_bytes()).digest() != hashlib.sha256(content).digest():
                 raise FileExistsError(f"Refusing to replace existing source file: {path}")
             return
-        temp_path = path.with_name(f".{path.name}.tmp")
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+        )
+        temp_path = Path(temp_name)
         try:
-            with temp_path.open("xb") as handle:
+            with os.fdopen(fd, "wb") as handle:
                 handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(temp_path, path)
         finally:
             if temp_path.exists():
@@ -712,18 +860,33 @@ class SourceCatalogue:
                     for chunk in chunks
                 ]
             )
-            self._write_immutable(normalized_path, normalized_content.encode("utf-8"))
+            normalized_bytes = normalized_content.encode("utf-8")
+            self._write_immutable(normalized_path, normalized_bytes)
             attributes = {
                 "artifact_type": "normalized_document",
                 "path": str(normalized_path.relative_to(self.normalized_dir)),
                 "chunk_count": len(chunks),
                 "sections": list(dict.fromkeys(chunk.section for chunk in chunks)),
+                "content_sha256": hashlib.sha256(normalized_bytes).hexdigest(),
+                "byte_size": len(normalized_bytes),
+                "normalized_format": "txt",
+                "normalized_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "validation": {"valid": True, "chunk_count": len(chunks)},
+                "transformation_history": ["text extraction and section normalization"],
             }
             kind = "document"
         else:
             frame, _ = load_uploaded_dataset(filename, content)
             normalized_path = self.normalized_dir / "datasets" / f"{resource_id}.csv"
-            normalized_content = frame.to_csv(index=False, lineterminator="\n").encode("utf-8")
+            normalized_content = (
+                content
+                if extension == ".csv"
+                else frame.to_csv(
+                    index=False,
+                    lineterminator="\n",
+                    float_format="%.17g",
+                ).encode("utf-8")
+            )
             self._write_immutable(normalized_path, normalized_content)
             missing_counts = {
                 str(column): int(count)
@@ -740,14 +903,58 @@ class SourceCatalogue:
                 )
                 for column, count in missing_counts.items()
             )
+            sheet_names: list[str] = []
+            if extension in {".xlsx", ".xls"}:
+                import pandas as pd
+
+                sheet_names = pd.ExcelFile(BytesIO(content)).sheet_names
+                if len(sheet_names) > 1:
+                    issues.append(
+                        Issue(
+                            code="additional_excel_sheets_not_normalized",
+                            severity="warning",
+                            message=(
+                                f"Only the first worksheet ({sheet_names[0]!r}) is "
+                                "normalized; all worksheets remain in the preserved original."
+                            ),
+                            source=source,
+                        )
+                    )
             attributes = {
                 "artifact_type": "normalized_dataset",
                 "path": str(normalized_path.relative_to(self.normalized_dir)),
                 "row_count": len(frame.index),
                 "column_count": len(frame.columns),
                 "columns": [str(column) for column in frame.columns],
+                "inferred_types": {
+                    str(column): str(dtype)
+                    for column, dtype in frame.dtypes.items()
+                },
                 "missing_value_counts": missing_counts,
+                "content_sha256": hashlib.sha256(normalized_content).hexdigest(),
+                "byte_size": len(normalized_content),
+                "normalized_format": "csv",
+                "normalized_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "validation": {
+                    "valid": True,
+                    "row_count": len(frame.index),
+                    "column_count": len(frame.columns),
+                },
+                "transformation_history": [
+                    "first worksheet converted to CSV"
+                    if extension in {".xlsx", ".xls"}
+                    else "JSON records converted to CSV"
+                    if extension in {".json", ".jsonl"}
+                    else "CSV validated and retained byte-for-byte"
+                ],
             }
+            if extension in {".xlsx", ".xls"}:
+                attributes["sheet_names"] = sheet_names
+                attributes["selected_sheet"] = sheet_names[0] if sheet_names else None
+            if extension in {".json", ".jsonl"}:
+                attributes["normalization"] = (
+                    "Flat JSON records converted to CSV; nested structures are rejected."
+                )
             kind = "structured_record"
 
         artifact = KnowledgeItem(
@@ -764,7 +971,20 @@ class SourceCatalogue:
         return artifact, normalized_path, attributes, issues
 
     def _artifact_path(self, item: KnowledgeItem) -> Path:
-        return self.normalized_dir / str(item.attributes["path"])
+        path = (self.normalized_dir / str(item.attributes["path"])).resolve()
+        if self.normalized_dir.resolve() not in path.parents:
+            raise ValueError("Catalogue artifact path escapes its normalized storage root")
+        return path
+
+    def _artifact_is_valid(self, item: KnowledgeItem) -> bool:
+        path = self._artifact_path(item)
+        if not path.is_file():
+            return False
+        expected_hash = item.attributes.get("content_sha256")
+        return (
+            expected_hash is None
+            or hashlib.sha256(path.read_bytes()).hexdigest() == expected_hash
+        )
 
     def _save_manifest(
         self,
@@ -775,6 +995,7 @@ class SourceCatalogue:
         issues: list[Issue],
         derived_artifacts: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        artifact: KnowledgeItem | None = None,
     ) -> None:
         manifest = ResourceManifest.from_dict(original.to_dict())
         manifest.processing_state = processing_state
@@ -784,6 +1005,16 @@ class SourceCatalogue:
         if metadata is not None:
             manifest.metadata.update(metadata)
         with closing(self._connect()) as connection, connection:
+            if artifact is not None:
+                connection.execute(
+                    "INSERT OR REPLACE INTO artifacts(artifact_id, resource_id, item_json) "
+                    "VALUES (?, ?, ?)",
+                    (
+                        artifact.item_id,
+                        resource_id,
+                        json.dumps(artifact.to_dict(), ensure_ascii=False),
+                    ),
+                )
             connection.execute(
                 "UPDATE resources SET manifest_json = ? WHERE resource_id = ?",
                 (json.dumps(manifest.to_dict(), ensure_ascii=False), resource_id),
@@ -826,6 +1057,136 @@ class SourceCatalogue:
         entries = [self.get_source(row["resource_id"]) for row in resource_ids]
         return [entry for entry in entries if entry is not None]
 
+    def reconcile(self) -> list[dict[str, str]]:
+        """Check catalogue references against stored bytes without deleting data."""
+        problems: list[dict[str, str]] = []
+        entries = self.list_sources()
+        registered_ids = {entry.manifest.resource_id for entry in entries}
+        referenced_artifacts: set[Path] = set()
+        for entry in entries:
+            resource_id = entry.manifest.resource_id
+            try:
+                _scope, original_path = self._original_path(entry.manifest)
+                original_hash = str(entry.manifest.metadata["content_sha256"])
+                if not original_path.is_file():
+                    raise FileNotFoundError("preserved original is missing")
+                if hashlib.sha256(original_path.read_bytes()).hexdigest() != original_hash:
+                    raise ValueError("preserved original hash does not match its manifest")
+            except (KeyError, OSError, ValueError) as exc:
+                problems.append(
+                    {"resource_id": resource_id, "artifact": "original", "problem": str(exc)}
+                )
+
+            for artifact in entry.artifacts:
+                relative_path = Path(str(artifact.attributes["path"]))
+                artifact_path = (self.normalized_dir / relative_path).resolve()
+                referenced_artifacts.add(artifact_path)
+                if self.normalized_dir.resolve() not in artifact_path.parents:
+                    problem = "normalized artifact path escapes its storage root"
+                elif not artifact_path.is_file():
+                    problem = "normalized artifact is missing"
+                else:
+                    expected_hash = artifact.attributes.get("content_sha256")
+                    if expected_hash and hashlib.sha256(
+                        artifact_path.read_bytes()
+                    ).hexdigest() != expected_hash:
+                        problem = "normalized artifact hash does not match its catalogue record"
+                    else:
+                        continue
+                problems.append(
+                    {
+                        "resource_id": resource_id,
+                        "artifact": str(relative_path),
+                        "problem": problem,
+                    }
+                )
+
+            artifact_record_paths = {
+                str(Path(str(artifact.attributes["path"])))
+                for artifact in entry.artifacts
+            }
+            manifest_artifact_paths = set(entry.manifest.derived_artifacts)
+            for artifact_path in sorted(artifact_record_paths - manifest_artifact_paths):
+                problems.append(
+                    {
+                        "resource_id": resource_id,
+                        "artifact": artifact_path,
+                        "problem": "catalogue artifact record is absent from the manifest",
+                    }
+                )
+            for manifest_path in entry.manifest.derived_artifacts:
+                relative_path = Path(manifest_path)
+                artifact_path = (self.normalized_dir / relative_path).resolve()
+                referenced_artifacts.add(artifact_path)
+                if self.normalized_dir.resolve() not in artifact_path.parents:
+                    problem = "manifest artifact path escapes its storage root"
+                elif manifest_path not in artifact_record_paths:
+                    problem = (
+                        "manifest references an artifact without a catalogue artifact record"
+                        if artifact_path.is_file()
+                        else "manifest references a missing normalized artifact"
+                    )
+                else:
+                    continue
+                problems.append(
+                    {
+                        "resource_id": resource_id,
+                        "artifact": manifest_path,
+                        "problem": problem,
+                    }
+                )
+
+        for root in (self.originals_dir, self.public_originals_dir):
+            if root.is_dir():
+                for source_dir in root.iterdir():
+                    if source_dir.is_dir() and source_dir.name not in registered_ids:
+                        problems.append(
+                            {
+                                "resource_id": source_dir.name,
+                                "artifact": str(source_dir.relative_to(root)),
+                                "problem": "preserved original has no catalogue record",
+                            }
+                        )
+        if self.normalized_dir.is_dir():
+            for artifact_path in self.normalized_dir.rglob("*"):
+                if artifact_path.is_file() and artifact_path.resolve() not in referenced_artifacts:
+                    problems.append(
+                        {
+                            "resource_id": "unregistered",
+                            "artifact": str(artifact_path.relative_to(self.normalized_dir)),
+                            "problem": "normalized artifact has no catalogue reference",
+                        }
+                    )
+
+        for resource_id in sorted({problem["resource_id"] for problem in problems}):
+            entry = self.get_source(resource_id)
+            if entry is None:
+                continue
+            issue = Issue(
+                code="source_reconciliation_failed",
+                severity="error",
+                message="; ".join(
+                    f"{problem['artifact']}: {problem['problem']}"
+                    for problem in problems
+                    if problem["resource_id"] == resource_id
+                ),
+                source=entry.manifest.source,
+            )
+            self._update_manifest_metadata(
+                resource_id,
+                processing_state="failed",
+                processing_stage="reconciliation",
+                issues=[
+                    *[
+                        existing
+                        for existing in entry.manifest.issues
+                        if existing.code != issue.code
+                    ],
+                    issue,
+                ],
+            )
+        return problems
+
     @property
     def normalized_documents_dir(self) -> Path:
         return self.normalized_dir / "documents"
@@ -833,7 +1194,9 @@ class SourceCatalogue:
 
 __all__ = [
     "CatalogueEntry",
+    "DuplicateResult",
     "SourceCatalogue",
     "SourceCategoryConflict",
+    "SourceIntegrityError",
     "SourceIngestionError",
 ]

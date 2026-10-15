@@ -1,3 +1,7 @@
+import sqlite3
+from io import BytesIO
+from concurrent.futures import ThreadPoolExecutor
+
 import pandas as pd
 import pytest
 
@@ -6,6 +10,7 @@ from parse.core.contracts import Issue
 from parse.source_catalogue import (
     SourceCatalogue,
     SourceCategoryConflict,
+    SourceIntegrityError,
     SourceIngestionError,
 )
 
@@ -102,6 +107,20 @@ def test_catalogue_registers_local_file_and_keeps_its_location(tmp_path):
     assert preserved.read_bytes() == payload
 
 
+def test_register_file_enforces_size_limit_before_unbounded_read(tmp_path, monkeypatch):
+    import parse.eda_ui
+
+    catalogue = make_catalogue(tmp_path)
+    local_source = tmp_path / "incoming.csv"
+    local_source.write_bytes(b"12345")
+    monkeypatch.setattr(parse.eda_ui, "MAX_SOURCE_BYTES", 4)
+
+    with pytest.raises(ValueError, match="Source files must be no larger"):
+        catalogue.register_file(local_source)
+
+    assert catalogue.list_sources() == []
+
+
 def test_catalogue_normalizes_tabular_upload_without_storing_rows_in_metadata(tmp_path):
     catalogue = make_catalogue(tmp_path)
     payload = b"temperature,grade\n1200,0.62\n1300,0.65\n"
@@ -113,12 +132,46 @@ def test_catalogue_normalizes_tabular_upload_without_storing_rows_in_metadata(tm
     assert entry.artifacts[0].kind == "structured_record"
     assert entry.artifacts[0].attributes["row_count"] == 2
     assert entry.artifacts[0].attributes["columns"] == ["temperature", "grade"]
+    assert entry.artifacts[0].attributes["inferred_types"] == {
+        "temperature": "int64",
+        "grade": "float64",
+    }
     assert "temperature" not in entry.manifest.metadata
     normalized = tmp_path / "normalized" / "datasets" / f"{entry.manifest.resource_id}.csv"
+    assert normalized.read_bytes() == payload
     assert pd.read_csv(normalized).to_dict(orient="records") == [
         {"temperature": 1200, "grade": 0.62},
         {"temperature": 1300, "grade": 0.65},
     ]
+
+
+def test_excel_registration_documents_first_sheet_selection_and_preserves_workbook(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+    workbook = BytesIO()
+    with pd.ExcelWriter(workbook, engine="openpyxl") as writer:
+        pd.DataFrame({"reading": [1, 2]}).to_excel(
+            writer, sheet_name="First", index=False
+        )
+        pd.DataFrame({"reading": [3]}).to_excel(
+            writer, sheet_name="Second", index=False
+        )
+    payload = workbook.getvalue()
+
+    entry = catalogue.register_upload("measurements.xlsx", payload)
+
+    assert entry.artifacts[0].attributes["sheet_names"] == ["First", "Second"]
+    assert entry.artifacts[0].attributes["selected_sheet"] == "First"
+    assert any(
+        issue.code == "additional_excel_sheets_not_normalized"
+        for issue in entry.manifest.issues
+    )
+    original = (
+        tmp_path / "private" / "originals"
+        / entry.manifest.metadata["preserved_original"]
+    )
+    assert original.read_bytes() == payload
+    normalized = tmp_path / "normalized" / entry.artifacts[0].attributes["path"]
+    assert pd.read_csv(normalized)["reading"].tolist() == [1, 2]
 
 
 def test_catalogue_retains_and_reports_dataset_missingness(tmp_path):
@@ -133,6 +186,168 @@ def test_catalogue_retains_and_reports_dataset_missingness(tmp_path):
     assert issue.code == "missing_values_present"
     assert issue.field == "comment"
     assert "2 missing value(s)" in issue.message
+
+
+@pytest.mark.parametrize(
+    ("filename", "payload"),
+    [
+        ("records.json", b'[{"reading": 1, "unit": "C"}, {"reading": 2, "unit": "C"}]'),
+        ("records.jsonl", b'{"reading": 1, "unit": "C"}\n{"reading": 2, "unit": "C"}\n'),
+    ],
+)
+def test_catalogue_validates_and_normalizes_json_records(tmp_path, filename, payload):
+    catalogue = make_catalogue(tmp_path)
+
+    entry = catalogue.register_upload(filename, payload)
+
+    assert entry.manifest.processing_state == "normalized"
+    assert entry.manifest.content_type == "json"
+    assert entry.manifest.metadata["original_file_type"] in {".json", ".jsonl"}
+    assert entry.artifacts[0].attributes["row_count"] == 2
+    normalized = tmp_path / "normalized" / entry.artifacts[0].attributes["path"]
+    assert pd.read_csv(normalized).to_dict(orient="records") == [
+        {"reading": 1, "unit": "C"},
+        {"reading": 2, "unit": "C"},
+    ]
+    original = (
+        tmp_path / "private" / "originals"
+        / entry.manifest.metadata["preserved_original"]
+    )
+    assert original.read_bytes() == payload
+
+
+def test_malformed_json_is_not_registered_as_a_normalized_dataset(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+
+    with pytest.raises(SourceIngestionError, match="could not be normalized"):
+        catalogue.register_upload("broken.json", b'{"reading": 1}')
+
+    entry = catalogue.list_sources()[0]
+    assert entry.manifest.processing_state == "failed"
+    assert entry.artifacts == []
+    assert entry.manifest.issues[0].severity == "error"
+
+
+def test_exact_duplicate_preflight_is_hash_based_and_reports_classification_conflict(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+    payload = b"reading\n1\n"
+    entry = catalogue.register_upload("first.csv", payload)
+
+    duplicate = catalogue.find_duplicate("renamed.csv", payload)
+    conflict = catalogue.find_duplicate(
+        "renamed.csv",
+        payload,
+        resource_class="public_dataset",
+    )
+    different_content = catalogue.find_duplicate("first.csv", b"reading\n2\n")
+
+    assert duplicate is not None
+    assert duplicate.duplicate_type == "exact_file"
+    assert duplicate.existing_resource_id == entry.manifest.resource_id
+    assert duplicate.physical_storage_reused
+    assert not duplicate.new_source_record_created
+    assert duplicate.classification_conflict is None
+    assert conflict is not None
+    assert conflict.classification_conflict is not None
+    assert conflict.physical_storage_reused
+    assert different_content is None
+
+
+def test_identical_bytes_cannot_be_registered_as_a_different_file_type(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+    payload = b"reading\n1\n"
+    existing = catalogue.register_upload("measurements.csv", payload)
+
+    duplicate = catalogue.find_duplicate("notes.txt", payload)
+    with pytest.raises(SourceCategoryConflict, match="already registered as 'csv'"):
+        catalogue.register_upload("notes.txt", payload)
+
+    assert duplicate is not None
+    assert duplicate.existing_resource_id == existing.manifest.resource_id
+    assert "not 'document'" in duplicate.classification_conflict
+    assert len(catalogue.list_sources()) == 1
+
+
+def test_concurrent_exact_uploads_create_one_catalogue_source(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+    catalogue._initialize()
+    payload = b"reading\n1\n2\n"
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        entries = list(
+            executor.map(
+                lambda _: catalogue.register_upload("same.csv", payload),
+                range(4),
+            )
+        )
+
+    assert len({entry.manifest.resource_id for entry in entries}) == 1
+    assert len(catalogue.list_sources()) == 1
+    assert len(catalogue.list_sources()[0].artifacts) == 1
+
+
+def test_registration_refuses_to_reuse_corrupted_preserved_original(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+    payload = b"reading\n1\n"
+    entry = catalogue.register_upload("data.csv", payload)
+    original = (
+        tmp_path / "private" / "originals"
+        / entry.manifest.metadata["preserved_original"]
+    )
+    original.write_bytes(b"tampered")
+
+    duplicate = catalogue.find_duplicate("renamed.csv", payload)
+    with pytest.raises(SourceIntegrityError, match="does not match"):
+        catalogue.register_upload("renamed.csv", payload)
+
+    assert duplicate is not None
+    assert not duplicate.artifact_verified
+    assert len(catalogue.list_sources()) == 1
+
+
+def test_reconciliation_reports_missing_artifacts_without_deleting_original(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+    entry = catalogue.register_upload("data.csv", b"reading\n1\n")
+    normalized = tmp_path / "normalized" / entry.artifacts[0].attributes["path"]
+    normalized.unlink()
+
+    problems = catalogue.reconcile()
+    repaired = catalogue.get_source(entry.manifest.resource_id)
+    original = (
+        tmp_path / "private" / "originals"
+        / entry.manifest.metadata["preserved_original"]
+    )
+
+    assert problems == [
+        {
+            "resource_id": entry.manifest.resource_id,
+            "artifact": entry.artifacts[0].attributes["path"],
+            "problem": "normalized artifact is missing",
+        }
+    ]
+    assert repaired is not None
+    assert repaired.manifest.processing_state == "failed"
+    assert original.read_bytes() == b"reading\n1\n"
+
+
+def test_reconciliation_reports_manifest_artifact_missing_catalogue_row(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+    entry = catalogue.register_upload("data.csv", b"reading\n1\n")
+    with sqlite3.connect(catalogue.database_path) as connection:
+        connection.execute(
+            "DELETE FROM artifacts WHERE resource_id = ?",
+            (entry.manifest.resource_id,),
+        )
+
+    problems = catalogue.reconcile()
+
+    assert problems == [
+        {
+            "resource_id": entry.manifest.resource_id,
+            "artifact": entry.manifest.derived_artifacts[0],
+            "problem": "manifest references an artifact without a catalogue artifact record",
+        }
+    ]
 
 
 def test_catalogue_persists_processing_failure_and_original(tmp_path):
@@ -281,6 +496,47 @@ def test_registration_failure_can_be_retried_without_replacing_original(tmp_path
         issue.code != "source_registration_failed"
         for issue in retried.manifest.issues
     )
+
+
+def test_failed_final_catalogue_update_keeps_original_and_can_be_retried(tmp_path, monkeypatch):
+    catalogue = make_catalogue(tmp_path)
+    original = b"reading\n1\n2\n"
+    original_store = catalogue._store_artifact
+
+    def fail_once(*args, **kwargs):
+        monkeypatch.setattr(catalogue, "_store_artifact", original_store)
+        raise sqlite3.OperationalError("simulated catalogue update failure")
+
+    monkeypatch.setattr(catalogue, "_store_artifact", fail_once)
+    with pytest.raises(sqlite3.OperationalError, match="simulated"):
+        catalogue.register_confirmed_upload(
+            "data.csv",
+            original,
+            final_content=b"reading\n1\n",
+            resource_class="private_operational_data",
+        )
+
+    duplicate = catalogue.find_duplicate("data.csv", original)
+    assert duplicate is not None
+    resource_id = duplicate.existing_resource_id
+    failed = catalogue.get_source(resource_id)
+    preserved = (
+        tmp_path / "private" / "originals" / resource_id / "data.csv"
+    )
+    assert failed is not None
+    assert failed.manifest.processing_state == "failed"
+    assert preserved.read_bytes() == original
+
+    retried = catalogue.register_confirmed_upload(
+        "data.csv",
+        original,
+        final_content=b"reading\n1\n",
+        resource_class="private_operational_data",
+    )
+
+    assert retried.manifest.processing_state == "normalized"
+    assert len(retried.artifacts) == 2
+    assert catalogue.reconcile() == []
 
 
 def test_existing_rag_engine_includes_catalogued_documents(tmp_path, monkeypatch):

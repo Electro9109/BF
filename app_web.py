@@ -1092,7 +1092,8 @@ with tab_ingestion:
     )
     uploaded_file = st.file_uploader(
         "Source file",
-        type=["txt", "csv", "xlsx", "xls"],
+        type=["txt", "csv", "xlsx", "xls", "json", "jsonl"],
+        max_upload_size=100,
         key="ingestion_upload",
     )
     if uploaded_file is not None:
@@ -1106,6 +1107,7 @@ with tab_ingestion:
             "document": "internal_technical_document",
             "csv": "private_operational_data",
             "spreadsheet": "private_operational_data",
+            "json": "private_operational_data",
         }
         resource_classes = {
             "Internal technical document": "internal_technical_document",
@@ -1153,6 +1155,36 @@ with tab_ingestion:
             f"`{staged.source.source_type}` · "
             f"SHA-256 `{staged.content_sha256}`"
         )
+        from parse.source_catalogue import SourceCatalogue
+
+        duplicate = SourceCatalogue().find_duplicate(
+            staged.filename,
+            staged.content,
+            resource_class=staged.resource_class,
+        )
+        duplicate_conflict = False
+        if duplicate is not None:
+            if duplicate.classification_conflict:
+                duplicate_conflict = True
+                st.error(
+                    "Exact duplicate classification conflict: "
+                    f"{duplicate.classification_conflict} "
+                    f"Existing source: `{duplicate.existing_resource_id}`."
+                )
+            elif duplicate.artifact_verified:
+                st.info(
+                    "Exact duplicate: source "
+                    f"`{duplicate.existing_resource_id}` already has a verified "
+                    f"original at `{duplicate.existing_artifact_location}`. "
+                    "Registration will reuse its source record."
+                )
+            else:
+                st.error(
+                    "An exact duplicate catalogue entry exists, but its preserved "
+                    "original is missing or has changed. Retrying can restore a missing "
+                    "copy from these verified upload bytes; a hash-mismatched copy is "
+                    "blocked and must be reviewed through catalogue reconciliation."
+                )
         if staged.source.source_type == "document":
             try:
                 preview_chunks = normalize_staged_document(staged)
@@ -1163,7 +1195,7 @@ with tab_ingestion:
             except (OSError, UnicodeError, ValueError) as exc:
                 st.warning(f"Text parsing needs attention before registration: {exc}")
 
-        if staged.source.source_type in {"csv", "spreadsheet"}:
+        if staged.source.source_type in {"csv", "spreadsheet", "json"}:
             analysis_objective = st.text_input(
                 "Analysis objective (optional)",
                 placeholder="For example: identify attributes relevant to prediction",
@@ -1250,14 +1282,14 @@ with tab_ingestion:
     active_staged: StagedUpload | None = st.session_state.get("ingestion_staged_upload")
     if (
         active_staged is not None
-        and active_staged.source.source_type in {"csv", "spreadsheet"}
+        and active_staged.source.source_type in {"csv", "spreadsheet", "json"}
         and st.session_state.get("ingestion_analysis_hash")
         == active_staged.content_sha256
         and eda_result is not None
     ):
         st.markdown("### Analysis review")
     if eda_result is None:
-        if active_staged is not None and active_staged.source.source_type in {"csv", "spreadsheet"}:
+        if active_staged is not None and active_staged.source.source_type in {"csv", "spreadsheet", "json"}:
             st.info("Analyse the staged dataset to review its profile and cleaning proposals.")
     else:
         if active_staged is None or st.session_state.get(
@@ -1742,14 +1774,22 @@ with tab_ingestion:
             final_content = None
             final_hash = staged.content_sha256
         else:
-            final_frame = (
-                review.cleaned
-                if selected_version == "Reviewed working copy"
-                else st.session_state.eda_frame
-            )
-            final_content = final_frame.to_csv(
-                index=False, lineterminator="\n"
-            ).encode("utf-8")
+            if (
+                selected_version == "Original upload"
+                and Path(staged.filename).suffix.lower() == ".csv"
+            ):
+                final_content = staged.content
+            else:
+                final_frame = (
+                    review.cleaned
+                    if selected_version == "Reviewed working copy"
+                    else st.session_state.eda_frame
+                )
+                final_content = final_frame.to_csv(
+                    index=False,
+                    lineterminator="\n",
+                    float_format="%.17g",
+                ).encode("utf-8")
             final_hash = hashlib.sha256(final_content).hexdigest()
 
         st.caption(
@@ -1759,6 +1799,7 @@ with tab_ingestion:
         confirmed = st.checkbox(
             "I reviewed this source and explicitly confirm registration.",
             key=f"ingestion_confirm_{staged.content_sha256[:12]}_{final_hash[:12]}",
+            disabled=duplicate_conflict,
         )
         registration = st.session_state.get("ingestion_registration")
         already_registered = (
@@ -1785,7 +1826,7 @@ with tab_ingestion:
         if st.button(
             "Confirm and register source",
             type="primary",
-            disabled=not confirmed or already_registered,
+            disabled=not confirmed or already_registered or duplicate_conflict,
             key="confirm_source_registration",
         ):
             from parse.source_catalogue import (

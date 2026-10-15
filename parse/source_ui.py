@@ -31,7 +31,20 @@ def render_catalogue_inspection(
     import streamlit as st
 
     st.subheader("Source catalogue")
-    entries = entries if entries is not None else SourceCatalogue().list_sources()
+    catalogue = SourceCatalogue()
+    entries = entries if entries is not None else catalogue.list_sources()
+    if st.button("Reconcile stored artifacts", key="parse_reconcile_catalogue"):
+        problems = catalogue.reconcile()
+        if problems:
+            st.error(f"Reconciliation found {len(problems)} storage issue(s).")
+            for problem in problems:
+                st.warning(
+                    f"{problem['resource_id']} · {problem['artifact']}: "
+                    f"{problem['problem']}"
+                )
+        else:
+            st.success("All catalogue-referenced originals and artifacts are valid.")
+        entries = catalogue.list_sources()
     if not entries:
         st.info("No sources have been registered yet.")
         return
