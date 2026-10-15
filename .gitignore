@@ -33,3 +33,4 @@ storage/private/originals/
 storage/public/originals/
 storage/normalized/documents/
 storage/normalized/datasets/
+catboost_info/

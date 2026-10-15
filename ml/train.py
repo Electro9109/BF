@@ -29,13 +29,20 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import KFold, RandomizedSearchCV
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-# XGBoost is optional (not available in all envs)
+# XGBoost and CatBoost are optional (not available in all envs)
 try:
     from xgboost import XGBRegressor
     HAS_XGB = True
 except ImportError:
     HAS_XGB = False
-    warnings.warn("xgboost not installed — only Random Forest will be trained.")
+    warnings.warn("xgboost not installed — XGBoost models will be skipped.")
+
+try:
+    from catboost import CatBoostRegressor
+    HAS_CATBOOST = True
+except ImportError:
+    HAS_CATBOOST = False
+    warnings.warn("catboost not installed — CatBoost models will be skipped.")
 
 from departments.blast_furnace.feature_processing import load_and_build, TARGET_COLS
 from departments.blast_furnace.department import BlastFurnaceDepartment
@@ -71,6 +78,15 @@ def get_models() -> dict:
             random_state=42,
             verbosity=0,
         )
+    if HAS_CATBOOST:
+        models["CatBoost"] = CatBoostRegressor(
+            iterations=300,
+            learning_rate=0.05,
+            depth=5,
+            l2_leaf_reg=3,
+            verbose=False,
+            random_seed=42,
+        )
     return models
 
 
@@ -94,6 +110,14 @@ def tune_hyperparameters(model_name: str, X: np.ndarray, y: np.ndarray) -> dict:
             "learning_rate": [0.01, 0.05, 0.1, 0.2],
             "subsample": [0.7, 0.8, 0.9],
             "colsample_bytree": [0.7, 0.8, 0.9]
+        }
+    elif model_name == "CatBoost" and HAS_CATBOOST:
+        base_model = CatBoostRegressor(random_seed=42, verbose=False)
+        param_dist = {
+            "iterations": [100, 200, 300, 400],
+            "depth": [4, 5, 6, 7],
+            "learning_rate": [0.01, 0.03, 0.05, 0.1],
+            "l2_leaf_reg": [1, 3, 5, 7],
         }
     else:
         return {}
@@ -157,6 +181,8 @@ def run_benchmark(
             # Create model instance with tuned parameters
             if model_name == "RandomForest":
                 tuned_model = RandomForestRegressor(**best_params, random_state=42, n_jobs=-1)
+            elif model_name == "CatBoost":
+                tuned_model = CatBoostRegressor(**best_params, random_seed=42, verbose=False)
             else:
                 tuned_model = XGBRegressor(**best_params, random_state=42, verbosity=0)
                 

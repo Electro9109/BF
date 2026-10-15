@@ -816,7 +816,7 @@ with tab_pred:
 
                 model_choice = st.selectbox(
                     "Model",
-                    options=["Best (auto)", "RandomForest", "XGBoost"],
+                    options=["Best (auto)", "CatBoost", "RandomForest", "XGBoost"],
                     index=0,
                     help="'Best' auto-selects the model with lowest RMSE per target",
                 )
@@ -832,6 +832,7 @@ with tab_pred:
                 # Map UI choice to Predictor model_type
                 model_type_map = {
                     "Best (auto)":   "best",
+                    "CatBoost":      "CatBoost",
                     "RandomForest":  "RandomForest",
                     "XGBoost":       "XGBoost",
                 }
@@ -1056,28 +1057,88 @@ with tab_pred:
                     unsafe_allow_html=True,
                 )
 
-# ── Prediction history panel ───────────────────────────────────────────────────
+# ── Model Performance & Benchmark Panel ─────────────────────────────────────────
 with tab_pred:
-    hist = st.session_state.get("pred_history", [])
-    if hist:
-        st.markdown("")
-        with st.expander(f"📋 Prediction History  ({len(hist)} runs)", expanded=False):
-            for h in hist:
-                conf_class_map = {"high": "conf-high", "medium": "conf-medium", "low": "conf-low"}
-                conf_class = conf_class_map.get(h["conf"], "conf-unknown")
-                st.markdown(
-                    f'<div class="hist-row">'
-                    f'<span>{h["ts_stamp"]}</span>'
-                    f'<span>Ts=<span class="val">{h["ts_val"]}°C</span></span>'
-                    f'<span>Tm=<span class="val">{h["tm_val"]}°C</span></span>'
-                    f'<span>Tm-Ts=<span class="val">{h["tmt_val"]}°C</span></span>'
-                    f'<span class="{conf_class}">{h["conf"].upper()}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-            if st.button("🗑 Clear History", key="clear_hist"):
-                st.session_state.pred_history = []
-                st.rerun()
+    st.markdown("---")
+    with st.expander("📊 Loaded Models & Cross-Validation Benchmarks", expanded=False):
+        try:
+            from ml.batch_predictor import get_model_metadata
+            predictor_inst = cached_load_prediction_pipeline(ML_MODEL_DIR, "best").predictor
+            meta = get_model_metadata(predictor_inst)
+            
+            c_m1, c_m2, c_m3 = st.columns(3)
+            with c_m1:
+                st.metric("Ts Model (Winner)", meta.get("models", {}).get("Ts", "Unknown"))
+            with c_m2:
+                st.metric("Tm Model (Winner)", meta.get("models", {}).get("Tm", "Unknown"))
+            with c_m3:
+                st.metric("Tm−Ts Model (Winner)", meta.get("models", {}).get("Tm-Ts", "Unknown"))
+                
+            bench = meta.get("benchmark", {})
+            if bench:
+                bench_rows = []
+                for tgt, data in bench.items():
+                    bench_rows.append({
+                        "Target": tgt,
+                        "Best Model": data.get("best_model"),
+                        "RMSE (°C)": f"{data.get('rmse', 0):.2f}",
+                        "MAE (°C)": f"{data.get('mae', 0):.2f}",
+                        "R² Score": f"{data.get('r2', 0):.3f}",
+                    })
+                st.table(pd.DataFrame(bench_rows))
+        except Exception as exc:
+            st.info(f"Model benchmark metrics not available: {exc}")
+
+# ── Batch Prediction on Catalogued Datasets ────────────────────────────────────
+with tab_pred:
+    with st.expander("📁 Batch Prediction on Catalogued Tabular Sources", expanded=False):
+        try:
+            from parse.source_catalogue import SourceCatalogue
+            from ml.batch_predictor import predict_catalogue_dataset
+            
+            cat = SourceCatalogue()
+            entries = cat.list_sources()
+            
+            # Find tabular entries with normalized datasets
+            tabular_entries = []
+            for e in entries:
+                if any(art.attributes.get("artifact_type") == "normalized_dataset" for art in e.artifacts):
+                    tabular_entries.append(e)
+                    
+            if not tabular_entries:
+                st.info("No normalized tabular datasets found in the catalogue. Register a CSV or spreadsheet in Data Ingestion first.")
+            else:
+                options = {
+                    f"{e.manifest.title or e.manifest.source.label} ({e.manifest.resource_id})": e.manifest.resource_id
+                    for e in tabular_entries
+                }
+                selected_label = st.selectbox("Select Tabular Source", list(options.keys()))
+                selected_res_id = options[selected_label]
+                
+                if st.button("🚀 Run Batch Prediction", key=f"btn_batch_{selected_res_id}"):
+                    with st.spinner("Executing row-by-row prediction and building PARSE provenance..."):
+                        try:
+                            predictor_inst = cached_load_prediction_pipeline(ML_MODEL_DIR, "best").predictor
+                            pred_df, analyses = predict_catalogue_dataset(
+                                resource_id=selected_res_id,
+                                catalogue=cat,
+                                predictor=predictor_inst,
+                            )
+                            st.success(f"Successfully predicted {len(pred_df)} rows with PARSE provenance!")
+                            st.dataframe(pred_df)
+                            
+                            # Download button for predictions
+                            csv_data = pred_df.to_csv(index=False).encode("utf-8")
+                            st.download_button(
+                                "📥 Download Predictions (CSV)",
+                                data=csv_data,
+                                file_name=f"predictions_{selected_res_id}.csv",
+                                mime="text/csv",
+                            )
+                        except Exception as e_batch:
+                            st.error(f"Batch prediction failed: {e_batch}")
+        except Exception as exc:
+            st.warning(f"Could not load catalogue datasets: {exc}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

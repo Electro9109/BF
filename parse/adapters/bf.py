@@ -85,15 +85,20 @@ def retrieval_matches_to_result(
 def prediction_to_analysis(
     result: PredictionResult,
     result_id: str = "bf-analysis",
+    source_ref: SourceRef | None = None,
+    input_refs: Iterable[EvidenceRef] | None = None,
+    model_metadata: dict | None = None,
 ) -> AnalysisResult:
     """Convert a BF prediction result into a Core analysis result."""
-    source = SourceRef("bf-prediction-input", "user_input")
-    input_ref = EvidenceRef("bf-prediction-input", "observed_from")
+    source = source_ref or SourceRef("bf-prediction-input", "user_input")
+    in_refs = list(input_refs) if input_refs is not None else [EvidenceRef(source.source_id, "observed_from")]
     issues = [
         Issue("parser_warning", "warning", warning)
         for warning in result.parser_warnings
     ]
     predictions = dict(result.predictions)
+    if model_metadata:
+        predictions["model_metadata"] = dict(model_metadata)
     indicators = {
         key: predictions[key]
         for key in ("confidence", "distance")
@@ -106,7 +111,7 @@ def prediction_to_analysis(
     return AnalysisResult(
         result_id=result_id,
         outputs=predictions,
-        input_refs=[input_ref],
+        input_refs=in_refs,
         method="bf-sinter-predictor",
         provenance=Provenance(
             sources=[source],
