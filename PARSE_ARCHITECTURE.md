@@ -357,7 +357,7 @@ Current BF technologies are implementation choices:
 | Vector index | FAISS | retrieval implementation |
 | Language model | local Qwen/Transformers | synthesis implementation |
 | Prediction models | Random Forest/XGBoost | analysis implementation |
-| Storage | filesystem, CSV, Excel, SQLite index artifacts | source/storage infrastructure |
+| Storage | filesystem, CSV/Excel, SQLite source catalogue and index artifacts | source/storage infrastructure |
 | Interface | Streamlit | interface implementation |
 
 The intended dependency shape is:

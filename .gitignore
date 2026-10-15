@@ -26,3 +26,10 @@ tokenizer*.json
 gitattributes
 README(1).md
 LICENSE
+
+# Runtime PARSE source catalogue and generated source artifacts
+storage/catalogue/*.sqlite3*
+storage/private/originals/
+storage/public/originals/
+storage/normalized/documents/
+storage/normalized/datasets/

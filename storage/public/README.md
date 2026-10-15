@@ -4,5 +4,6 @@ Reserved for public research papers, standards, reference data, and other
 resources that may inform PARSE analysis without being imported as authoritative
 source material into the repository.
 
-The current scaffold does not automatically crawl, mirror, or view external
-resources. It only establishes a location for future manifest registration.
+There is no automatic web crawling or mirroring. A public source explicitly
+registered by a user is retained under the ignored local `originals/`
+subdirectory, with its licence and source location tracked in the catalogue.

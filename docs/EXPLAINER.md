@@ -139,7 +139,23 @@ The calling application receives a valid `ExplainerResult` without interruption.
 
 ---
 
-## 8. Deployment & Hardware Recommendations
+## 8. Data Explorer Presentation
+
+The Data Explorer puts analyzer findings and applicable workflow suggestions first.
+Supporting numerical values are displayed from each finding's existing result data;
+the interface does not calculate or alter them. Statistical explanations are
+generated only for the selected finding and remain primary when validated. The
+original finding, statistics, and validation details are available in a secondary
+details panel. Analyzer limitations and the existing cleaning/review workflow remain
+available in the Data Explorer.
+
+The UI does not change the explainer prompt, model, fidelity checks, or recommendation
+logic. Recommendations remain optional input to an individual explanation and are
+never created by the explainer.
+
+---
+
+## 9. Deployment & Hardware Recommendations
 
 ### System Requirements
 - **CPU Deployment:** 8GB+ RAM. Inference latency ~1.5s–3s per finding on modern multi-core x86_64 CPUs.

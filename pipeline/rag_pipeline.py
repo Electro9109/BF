@@ -10,7 +10,9 @@ unaffected.
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
+from config.paths import SOURCE_NORMALIZED_DIR
 from data.loader import load_and_chunk_data
 from data.schemas import Chunk
 from llm.generator import generate
@@ -37,8 +39,11 @@ class RAGResponse:
 
 
 def build_engine(docs_dir: str) -> tuple[RetrievalEngine | None, list[Chunk]]:
-    """Load and chunk all docs, then build the retrieval engine."""
+    """Load project and catalogued documents, then build the retrieval engine."""
     chunks = load_and_chunk_data(docs_dir)
+    catalogued_docs = SOURCE_NORMALIZED_DIR / "documents"
+    if catalogued_docs.is_dir():
+        chunks.extend(load_and_chunk_data(catalogued_docs))
     engine = RetrievalEngine(chunks) if chunks else None
     return engine, chunks
 

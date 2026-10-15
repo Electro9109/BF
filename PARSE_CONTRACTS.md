@@ -86,6 +86,21 @@ EvidenceRef
 - locator: optional precise location
 ```
 
+### 2.5 Persisted resource manifests
+
+`ResourceManifest` in `parse/core/resource_manifest.py` is a JSON-compatible
+storage representation built from the shared `SourceRef`, `Provenance`, and
+`Issue` contracts. It records resource classification, processing state,
+source location, compact metadata, and references to derived artifacts; it
+does not replace `KnowledgeItem` or operation-specific result contracts.
+
+The local source catalogue persists these manifests in SQLite, keeps original
+file bytes separately, and registers normalized artifacts with provenance back
+to their source. Source identity is content-derived and scoped by source type,
+so renames retain identity while changed content becomes a distinct source.
+The manifest stores issue summaries and artifact references, not whole dataset
+rows.
+
 ## 3. Knowledge Envelopes
 
 ### 3.1 KnowledgeItem

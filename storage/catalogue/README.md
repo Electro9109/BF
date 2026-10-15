@@ -1,8 +1,12 @@
 # Shared catalogue and metadata
 
-This directory is intended for resource manifests, catalogue metadata, and
-registry-style references that point to source material or derived outputs.
+`sources.sqlite3` is the local SQLite catalogue created by
+`parse.core.source_catalogue.SourceCatalogue`. It stores compact
+`ResourceManifest` records, source-location aliases, processing issues, and
+references to derived `KnowledgeItem` artifacts. It does not store source
+contents or dataframe payloads.
 
-The repository already defines the core lineage contracts in `parse/core/`.
-This folder does not replace them; it provides the shared storage boundary where
-JSON manifests can be written and tracked.
+Original bytes are retained under `storage/private/originals/`; normalized
+documents and tabular data are written under `storage/normalized/`. The
+catalogue reuses PARSE Core contracts rather than defining another source
+schema. Runtime databases are local and ignored by Git.

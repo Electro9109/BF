@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from parse.core.contracts import Provenance, SourceRef
+from parse.core.contracts import Issue, Provenance, SourceRef
 
 _RESOURCE_CLASSES = {
     "private_operational_data",
@@ -128,6 +128,7 @@ class ResourceManifest:
     metadata: dict[str, Any] = field(default_factory=dict)
     normalized_content: str | None = None
     derived_artifacts: list[str] = field(default_factory=list)
+    issues: list[Issue] = field(default_factory=list)
     created_at: str | None = None
     manifest_version: str = "1.0"
 
@@ -148,10 +149,13 @@ class ResourceManifest:
         self.title = _require_text(self.title, "title")
         self.contexts = _as_text_list(self.contexts, "contexts")
         self.derived_artifacts = _as_text_list(self.derived_artifacts, "derived_artifacts")
+        self.issues = list(self.issues)
         if self.source is not None and not isinstance(self.source, SourceRef):
             raise TypeError("source must be a SourceRef when supplied")
         if self.provenance is not None and not isinstance(self.provenance, Provenance):
             raise TypeError("provenance must be a Provenance when supplied")
+        if any(not isinstance(issue, Issue) for issue in self.issues):
+            raise TypeError("issues must contain Issue values")
         if self.metadata is None:
             self.metadata = {}
         if not isinstance(self.metadata, dict):
@@ -188,10 +192,39 @@ class ResourceManifest:
             "metadata": dict(self.metadata),
             "normalized_content": self.normalized_content,
             "derived_artifacts": list(self.derived_artifacts),
+            "issues": [issue.to_dict() for issue in self.issues],
             "created_at": self.created_at,
             "manifest_version": self.manifest_version,
         }
         return payload
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "ResourceManifest":
+        """Restore a manifest from its JSON-compatible representation."""
+        source = payload.get("source")
+        provenance = payload.get("provenance")
+        return cls(
+            resource_id=payload["resource_id"],
+            resource_class=payload["resource_class"],
+            content_type=payload["content_type"],
+            title=payload["title"],
+            source=_coerce_source(source),
+            contexts=payload.get("contexts", []),
+            provenance=_coerce_provenance(provenance),
+            processing_state=payload.get("processing_state", "registered"),
+            source_location=payload.get("source_location"),
+            access_restrictions=payload.get("access_restrictions"),
+            license=payload.get("license"),
+            metadata=payload.get("metadata", {}),
+            normalized_content=payload.get("normalized_content"),
+            derived_artifacts=payload.get("derived_artifacts", []),
+            issues=[
+                issue if isinstance(issue, Issue) else Issue.from_dict(issue)
+                for issue in payload.get("issues", [])
+            ],
+            created_at=payload.get("created_at"),
+            manifest_version=payload.get("manifest_version", "1.0"),
+        )
 
     def write_json(self, destination: str | os.PathLike[str], *, allow_overwrite: bool = False) -> Path:
         path = Path(destination)
@@ -218,26 +251,7 @@ class ResourceManifest:
     @classmethod
     def from_json(cls, path: str | os.PathLike[str]) -> "ResourceManifest":
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
-        source = payload.get("source")
-        provenance = payload.get("provenance")
-        return cls(
-            resource_id=payload["resource_id"],
-            resource_class=payload["resource_class"],
-            content_type=payload["content_type"],
-            title=payload["title"],
-            source=_coerce_source(source),
-            contexts=payload.get("contexts", []),
-            provenance=_coerce_provenance(provenance),
-            processing_state=payload.get("processing_state", "registered"),
-            source_location=payload.get("source_location"),
-            access_restrictions=payload.get("access_restrictions"),
-            license=payload.get("license"),
-            metadata=payload.get("metadata", {}),
-            normalized_content=payload.get("normalized_content"),
-            derived_artifacts=payload.get("derived_artifacts", []),
-            created_at=payload.get("created_at"),
-            manifest_version=payload.get("manifest_version", "1.0"),
-        )
+        return cls.from_dict(payload)
 
 
 def create_resource_manifest(
@@ -271,6 +285,7 @@ def create_resource_manifest(
         "license",
         "normalized_content",
         "derived_artifacts",
+        "issues",
         "created_at",
         "metadata",
     }
@@ -321,6 +336,10 @@ def create_resource_manifest(
         metadata=manifest_metadata,
         normalized_content=metadata.get("normalized_content"),
         derived_artifacts=metadata.get("derived_artifacts", []),
+        issues=[
+            issue if isinstance(issue, Issue) else Issue.from_dict(issue)
+            for issue in metadata.get("issues", [])
+        ],
         created_at=metadata.get("created_at"),
     )
     manifest.write_json(destination, allow_overwrite=allow_overwrite)

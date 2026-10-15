@@ -28,10 +28,14 @@ streamlit run app_web.py
 ```
 
 The verified prototype URL is `http://localhost:8501` when Streamlit uses its default port.
-The interface provides Data Explorer/Cleaner, RAG Chat, and the Sinter predictor. Data Explorer profiles
-CSV/Excel inputs read-only and presents findings, limitations, possible next actions, and a controlled cleaning review. The Cleaner never changes data until selected proposals are approved, preserves the original frame, and records before/after quality snapshots and value-level changes. The predictor can run with the
-trained local artifacts even when the local LLM is unavailable; RAG Chat and natural-language
-condition parsing require the files in `LocalModels/`.
+The interface provides Data Explorer/Cleaner, RAG Chat, the Sinter predictor, and a source catalogue. Data Explorer profiles
+CSV/Excel inputs read-only, prioritizes analyzer findings and applicable workflow suggestions, and displays
+their existing supporting values. Validated plain-language explanations are primary, with source findings,
+statistics, and validation details kept available as secondary detail. Limitations and the controlled
+cleaning review remain available. The Cleaner never changes data until selected proposals are approved,
+preserves the original frame, and records before/after quality snapshots and value-level changes. The
+predictor can run with the trained local artifacts even when the local LLM is unavailable; RAG Chat and
+natural-language condition parsing require the files in `LocalModels/`.
 
 For a lightweight command-line RAG check:
 
@@ -46,26 +50,27 @@ several minutes on CPU and does not require network access.
 > several minutes the first time. This is a one-time cost per session — subsequent
 > interactions are fast. A loading spinner is shown while this happens.
 
-## Resource storage scaffold
+## Source storage and catalogue
 
-The repository now includes a minimal storage scaffold under `storage/` to reserve
-space for private operational resources, public knowledge, shared manifest metadata,
-and derived artifacts without introducing a parallel architecture. The layout is
-implemented as explicit placeholders and README guidance rather than a full data
-store or retrieval layer.
+The **Sources** tab registers `.txt`, `.csv`, `.xlsx`, and `.xls` files in the
+local PARSE catalogue. Originals are retained byte-for-byte, source identity is
+derived from content and source type, and repeated uploads add source locations
+instead of overwriting another source. Processing status, missing-value or
+failure issues, and links to normalized artifacts are available for inspection.
 
-- `storage/private/` for approved internal operational records and metadata
-- `storage/public/` for external or public-resource references
-- `storage/catalogue/` for JSON manifests and shared metadata
-- `storage/normalized/` for extracted or normalized content
-- `storage/derived/` for derived outputs and reproducible artifacts
+- `storage/private/originals/` and `storage/public/originals/` retain categorized
+  original files locally.
+- `storage/catalogue/sources.sqlite3` stores compact resource manifests,
+  locations, issues, and artifact references; it does not store dataset rows.
+- `storage/normalized/` contains parsed text documents and normalized tabular
+  artifacts. Registered text documents are included in the existing RAG index.
+- `storage/derived/` remains available for reproducible analysis outputs.
 
-A minimal JSON manifest writer is available in `parse/core/resource_manifest.py`.
-It reuses the existing `SourceRef` and `Provenance` contracts from
-`parse/core/contracts.py`, validates required fields, prevents silent overwrite,
-and writes a deterministic resource ID when one is not supplied. The scaffold does
-not yet implement unified retrieval, automatic public-resource ingestion, or a
-full shared database.
+The `parse.source_catalogue.SourceCatalogue` API supports local files through
+`register_file()` and uploaded bytes through `register_upload()`. The registry
+reuses PARSE `ResourceManifest`, `SourceRef`, `Provenance`, `Issue`, and
+`KnowledgeItem` contracts. Runtime catalogue files are ignored by Git. It does
+not implement public web crawling, cloud storage, or permissions management.
 
 ---
 

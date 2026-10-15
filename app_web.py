@@ -2,9 +2,11 @@
 app_web.py - Streamlit Web UI for the Air-Gapped RAG Engine + ML Predictor.
 Run:  streamlit run app_web.py
 
-Three tabs:
+Four tabs:
   1. RAG Chat   — ask questions about metallurgical documents (unchanged)
   2. Predictor  — input experiment params → get Ts / Tm / Tm-Ts predictions
+  3. Data Explorer — inspect and analyse uploaded datasets
+  4. Sources — register and inspect source files
 
 This file is a thin UI layer.
   - Retrieval/generation logic lives in pipeline/rag_pipeline.py
@@ -380,13 +382,15 @@ def _explainer_display_content(result: dict, fallback_content: str) -> str:
     return str(result.get("content") or fallback_content)
 
 
-def _build_dataset_summary(eda_result) -> dict:
+def _build_dataset_summary(eda_result, next_actions=()) -> dict:
     """Build a dataset-level report directly from the analyzer's findings."""
     findings = list(eda_result.findings)
     observations = [
         {
             "finding_id": finding.finding_id,
+            "category": finding.category,
             "observation": finding.observation,
+            "supporting_values": dict(getattr(finding, "result", {}) or {}),
         }
         for finding in findings
     ]
@@ -400,6 +404,10 @@ def _build_dataset_summary(eda_result) -> dict:
         for limitation in eda_result.limitations
         if limitation not in limitations
     )
+    actions = [
+        action.to_dict() if hasattr(action, "to_dict") else dict(action)
+        for action in next_actions
+    ]
     return {
         "finding_count": len(findings),
         "scope": (
@@ -411,6 +419,8 @@ def _build_dataset_summary(eda_result) -> dict:
         ),
         "observations": observations[:5],
         "omitted_count": max(0, len(observations) - 5),
+        "recommendations": [action for action in actions if action["applicable"]],
+        "other_actions": [action for action in actions if not action["applicable"]],
         "limitations": limitations,
     }
 
@@ -660,7 +670,9 @@ st.markdown("## P.A.R.S.E")
 st.caption("Process · Analysis · Retrieval · Synthesis · Evaluation — Fully offline metallurgical assistant.")
 st.divider()
 
-tab_rag, tab_pred, tab_eda = st.tabs(["🔍 RAG Chat", "🧮 Predictor", "📊 Data Explorer"])
+tab_rag, tab_pred, tab_eda, tab_sources = st.tabs(
+    ["🔍 RAG Chat", "🧮 Predictor", "📊 Data Explorer", "📚 Sources"]
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1129,6 +1141,7 @@ with tab_eda:
             st.error(f"Dataset profiling failed: {exc}")
 
     eda_result = st.session_state.get("eda_result")
+    analysis_bundle = st.session_state.get("analysis_bundle")
     if eda_result is None:
         st.info("Upload a dataset and select Profile dataset to begin.")
     else:
@@ -1147,36 +1160,65 @@ with tab_eda:
         overview[3].metric("Modified", "No" if not eda_result.data_modified else "Yes")
 
         st.markdown("### What the analysis tells us")
-        dataset_summary = _build_dataset_summary(eda_result)
+        from parse.analysis import generate_next_actions
+
+        dataset_summary = _build_dataset_summary(
+            eda_result,
+            generate_next_actions(eda_result),
+        )
         if not dataset_summary["finding_count"]:
             st.info("Profiling did not produce findings to summarize.")
         else:
             st.caption(
-                "Source-backed summary of the available analyzer findings. "
-                "No additional findings or recommendations are generated."
+                "Analyzer findings and workflow suggestions are shown first. "
+                "Supporting values are copied from the analysis result."
             )
             if dataset_summary["omitted_count"]:
                 st.caption(
                     f"Showing 5 of {dataset_summary['finding_count']} findings; "
                     "the complete findings remain available below."
                 )
-            summary_items = "".join(
-                f"<li>{html.escape(str(item['observation']))}</li>"
-                for item in dataset_summary["observations"]
-            )
+            summary_items = []
+            for item in dataset_summary["observations"]:
+                details = ""
+                if item["supporting_values"]:
+                    values = html.escape(
+                        json.dumps(item["supporting_values"], sort_keys=True, default=str)
+                    )
+                    details = (
+                        '<br><small>Supporting values: '
+                        f'<code>{values}</code></small>'
+                    )
+                summary_items.append(
+                    f"<li><strong>{html.escape(str(item['category']).title())}</strong>: "
+                    f"{html.escape(str(item['observation']))}{details}</li>"
+                )
             st.markdown(
                 '<div class="explainer-card">'
                 f'<p class="explainer-copy">{html.escape(dataset_summary["scope"])}</p>'
-                f'<ul class="explainer-copy">{summary_items}</ul>'
+                f'<ul class="explainer-copy">{"".join(summary_items)}</ul>'
                 "</div>",
                 unsafe_allow_html=True,
             )
+            if dataset_summary["recommendations"]:
+                st.markdown("#### Suggested next steps")
+                for action in dataset_summary["recommendations"]:
+                    st.markdown(f"- **{action['action']}** — {action['reason']}")
+            if dataset_summary["other_actions"]:
+                with st.expander("Other workflow checks", expanded=False):
+                    for action in dataset_summary["other_actions"]:
+                        st.markdown(f"- **{action['action']}** — {action['reason']}")
             if dataset_summary["limitations"]:
                 with st.expander("Analysis limitations", expanded=False):
                     for limitation in dataset_summary["limitations"]:
                         st.markdown(f"- {limitation}")
 
-        with st.expander("Explain an individual finding", expanded=False):
+        st.markdown("### Explain a finding")
+        st.caption(
+            "The translator explains the selected analyzer finding; it does not "
+            "recalculate statistics or create recommendations."
+        )
+        with st.container():
             if not eda_result.findings:
                 st.info("No findings are available to explain.")
             else:
@@ -1305,7 +1347,6 @@ with tab_eda:
         st.markdown("### Dataset overview")
         st.markdown(eda_result.summary())
 
-        analysis_bundle = st.session_state.get("analysis_bundle")
         if analysis_bundle is not None:
             st.markdown("### Dataset Analysis")
             st.caption("Statistical observations, semantic candidates, and relevance are shown separately. Candidate meanings require review.")
@@ -1553,3 +1594,13 @@ with tab_eda:
             )
         else:
             st.warning("Please profile the dataset first to enable context-aware cleaning.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — SOURCES
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab_sources:
+    from parse.source_ui import render_source_management
+
+    render_source_management()
