@@ -349,24 +349,35 @@ evaluation = evaluator.evaluate(target=synthesis, analyses=[analysis])
 │   ├── explainer_llm.py          Qwen Explainer model loader and inference
 │   ├── explainer_adapter.py      Converts findings to Explainer record format
 │   ├── explainer_synthesizer.py  Synthesizer protocol implementation
+│   ├── translator_prompt.py      Role & system prompt for PARSE Results Translator
+│   ├── translator_pipeline.py    Deterministic execution pipeline for module translation
+│   ├── domain_workflows.py       Analytical & predictive workflows for Sintering and Energy
 │   ├── fidelity_evaluator.py     Evaluator protocol implementation
-│   ├── core/                     Core contracts and operation protocols
+│   ├── core/                     Core contracts, translator contracts, and protocols
 │   └── semantic_analysis.py      Relevance and interpretation layer
 ├── pipeline/
 │   ├── prediction_pipeline.py    Orchestrates feature build → predict → summary
 │   └── rag_pipeline.py           RAG retrieval + LLM answer generation
+├── departments/
+│   ├── blast_furnace/            BF softening-melting temperature schema & parsers
+│   ├── sintering/                Sinter plant productivity schema & domain ranges
+│   └── energy/                   Steel industry electrical energy consumption schema
+├── data/
+│   ├── raw/
+│   │   ├── sintering/            SinterProductivityData.csv
+│   │   └── energy/               Steel_industry_data.csv
+│   └── processed/                Model-ready transformed partitions
 ├── retrieval/                    FAISS index, embeddings, chunk ranking
 └── llm/                          Offline LLM loader and generator wrapper
 ```
 
 **Repo layout rule:** `departments/<name>/` holds domain-specific schema,
-config, parsers, and feature ranges for one department (Blast Furnace is
-the only one implemented so far). `parse/`, `pipeline/`, `ml/`,
+config, parsers, and feature ranges for operational units (Blast Furnace,
+Sintering, and Energy are currently implemented). `parse/`, `pipeline/`, `ml/`,
 `retrieval/`, and `llm/` are generic machinery that consumes a
-department's config rather than defining it — even where, like `ml/`
-today, that machinery is currently only proven against Blast Furnace and
-still has some values hardcoded that should eventually come from the
-`Department` contract instead.
+department's config rather than defining it. Analytical findings, predictions,
+and anomaly reports flow into `parse/core/translator_contract.py` and are
+explained via `parse/translator_pipeline.py`.
 
 ---
 

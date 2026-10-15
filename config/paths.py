@@ -20,3 +20,12 @@ SOURCE_CATALOGUE_DB = STORAGE_DIR / "catalogue" / "sources.sqlite3"
 SOURCE_ORIGINALS_DIR = STORAGE_DIR / "private" / "originals"
 SOURCE_PUBLIC_ORIGINALS_DIR = STORAGE_DIR / "public" / "originals"
 SOURCE_NORMALIZED_DIR = STORAGE_DIR / "normalized"
+DATA_DIR = PROJECT_ROOT / "data"
+RAW_DATA_DIR = DATA_DIR / "raw"
+PROCESSED_DATA_DIR = DATA_DIR / "processed"
+SINTER_RAW_DIR = RAW_DATA_DIR / "sintering"
+ENERGY_RAW_DIR = RAW_DATA_DIR / "energy"
+SINTER_PRODUCTIVITY_CSV = SINTER_RAW_DIR / "SinterProductivityData.csv"
+STEEL_ENERGY_CSV = ENERGY_RAW_DIR / "Steel_industry_data.csv"
+
+
