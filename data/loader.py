@@ -16,8 +16,7 @@ from data.schemas import Chunk
 logger = logging.getLogger(__name__)
 
 
-def _read_document_text(file_path: Path) -> str:
-    raw = file_path.read_bytes()
+def decode_document_bytes(raw: bytes) -> str:
     if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
         return raw.decode("utf-16")
 
@@ -28,6 +27,10 @@ def _read_document_text(file_path: Path) -> str:
         if any(ord(char) < 32 and char not in "\n\r\t\f" for char in text):
             raise utf8_error
         return text
+
+
+def _read_document_text(file_path: Path) -> str:
+    return decode_document_bytes(file_path.read_bytes())
 
 
 def load_and_chunk_data(docs_dir: str, strict: bool = False) -> list[Chunk]:

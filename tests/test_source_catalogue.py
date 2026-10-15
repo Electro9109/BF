@@ -3,7 +3,11 @@ import pytest
 
 from data.loader import load_and_chunk_data
 from parse.core.contracts import Issue
-from parse.source_catalogue import SourceCatalogue, SourceIngestionError
+from parse.source_catalogue import (
+    SourceCatalogue,
+    SourceCategoryConflict,
+    SourceIngestionError,
+)
 
 
 def make_catalogue(tmp_path):
@@ -159,6 +163,124 @@ def test_catalogue_rejects_unsupported_files_without_registering(tmp_path):
         catalogue.register_upload("archive.zip", b"not supported")
 
     assert catalogue.list_sources() == []
+
+
+def test_confirmed_upload_preserves_original_and_stores_selected_tabular_artifact(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+    original = b"temperature,grade\n1200,0.62\n1300,0.65\n"
+    selected = b"temperature,grade\n1200,0.62\n"
+    workflow = {
+        "selected_version": "Reviewed working copy",
+        "approved_transformations": ["proposal-1"],
+        "unresolved_issue_ids": ["issue-1"],
+    }
+
+    first = catalogue.register_confirmed_upload(
+        "results.csv",
+        original,
+        final_content=selected,
+        title="Reviewed results",
+        resource_class="private_operational_data",
+        contexts=["sinter"],
+        workflow_metadata=workflow,
+    )
+    repeated = catalogue.register_confirmed_upload(
+        "renamed.csv",
+        original,
+        final_content=selected,
+        title="Reviewed results",
+        resource_class="private_operational_data",
+        contexts=["sinter"],
+        workflow_metadata=workflow,
+    )
+
+    original_path = (
+        tmp_path / "private" / "originals" / first.manifest.resource_id / "results.csv"
+    )
+    final_path = tmp_path / "normalized" / "datasets" / (
+        f"{first.manifest.resource_id}-"
+        f"{first.manifest.metadata['final_content_sha256'][:16]}.csv"
+    )
+    assert original_path.read_bytes() == original
+    assert final_path.read_bytes() == selected
+    assert first.manifest.metadata["final_content_sha256"] != (
+        first.manifest.metadata["content_sha256"]
+    )
+    assert first.manifest.metadata["workflow"] == workflow
+    assert first.manifest.contexts == ["sinter"]
+    assert repeated.manifest.resource_id == first.manifest.resource_id
+    assert len(repeated.artifacts) == 2
+
+
+def test_duplicate_content_cannot_be_registered_under_a_different_category(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+    payload = b"TOPIC: sinter\nSECTION: overview\nShared source content."
+    catalogue.register_upload(
+        "guide.txt",
+        payload,
+        resource_class="internal_technical_document",
+    )
+
+    with pytest.raises(SourceCategoryConflict, match="already registered as"):
+        catalogue.register_confirmed_upload(
+            "guide.txt",
+            payload,
+            title="Guide",
+            resource_class="public_research",
+        )
+
+    assert len(catalogue.list_sources()) == 1
+
+
+def test_index_refresh_state_is_inspectable_and_retryable(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+    entry = catalogue.register_upload(
+        "guide.txt",
+        b"TOPIC: sinter\nSECTION: overview\nRetrieval evidence.",
+    )
+
+    failed = catalogue.mark_index_failed(entry.manifest.resource_id, "index offline")
+    assert failed.manifest.processing_state == "failed"
+    assert failed.manifest.metadata["processing_stage"] == "indexing"
+    assert failed.manifest.metadata["index_error"] == "index offline"
+    assert failed.manifest.issues[-1].code == "source_indexing_failed"
+
+    retried = catalogue.mark_indexed(entry.manifest.resource_id, 1)
+    assert retried.manifest.processing_state == "indexed"
+    assert retried.manifest.metadata["processing_stage"] == "indexed"
+    assert retried.manifest.metadata["indexed_chunk_count"] == 1
+    assert retried.manifest.metadata["index_error"] is None
+    assert all(issue.code != "source_indexing_failed" for issue in retried.manifest.issues)
+
+
+def test_registration_failure_can_be_retried_without_replacing_original(tmp_path):
+    catalogue = make_catalogue(tmp_path)
+    original = b"value\n1\n2\n"
+    entry = catalogue.register_upload("data.csv", original)
+    failed = catalogue.mark_registration_failed(
+        entry.manifest.resource_id, "final artifact write interrupted"
+    )
+
+    assert failed.manifest.processing_state == "failed"
+    assert failed.manifest.metadata["processing_stage"] == "registration"
+    assert failed.manifest.issues[-1].code == "source_registration_failed"
+
+    retried = catalogue.register_confirmed_upload(
+        "data.csv",
+        original,
+        final_content=b"value\n1\n",
+        resource_class="private_operational_data",
+    )
+    preserved = (
+        tmp_path / "private" / "originals" / entry.manifest.resource_id / "data.csv"
+    )
+    assert retried.manifest.processing_state == "normalized"
+    assert retried.manifest.metadata["processing_stage"] == "normalized"
+    assert preserved.read_bytes() == original
+    assert all(
+        issue.code != "source_registration_failed"
+        for issue in retried.manifest.issues
+    )
 
 
 def test_existing_rag_engine_includes_catalogued_documents(tmp_path, monkeypatch):

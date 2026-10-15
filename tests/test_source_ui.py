@@ -38,15 +38,21 @@ def test_source_catalogue_table_exposes_type_location_status_and_issues():
             "Type": "document",
             "Location": "upload:guide.txt",
             "Status": "normalized",
+            "Stage": "",
+            "Index error": "",
             "Artifacts": 1,
             "Issues": 0,
         }
     ]
 
 
-def test_source_management_view_is_wired_into_streamlit_app():
+def test_source_catalogue_is_integrated_in_data_ingestion_without_extra_tab():
     source = APP_WEB_PATH.read_text(encoding="utf-8")
 
-    assert '"📚 Sources"' in source
-    assert "with tab_sources:" in source
-    assert "render_source_management()" in source
+    assert '"📥 Data Ingestion"' in source
+    assert "with tab_ingestion:" in source
+    assert "render_catalogue_inspection" in source
+    assert "tab_sources" not in source
+    assert '"📚 Sources"' not in source
+    assert source.count("st.file_uploader(") == 1
+    assert "dest.write_bytes" not in source

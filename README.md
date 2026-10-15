@@ -3,7 +3,7 @@
 A modular data and decision-support platform for metallurgical operations and technical analysis.
 
 PARSE provides:
-- 📊 **Data Explorer + Cleaner** — profile CSV/Excel datasets, review quality issues, and apply approved traceable cleaning proposals
+- 📥 **Data Ingestion** — stage text or tabular sources, analyse and review datasets, then explicitly register them
 - 🔍 **RAG Chat** — query metallurgical `.txt` documents with a local LLM
 - 🧮 **ML Predictor** — estimate softening (Ts) and melting (Tm, Tm−Ts) temperatures from burden chemistry, gas atmosphere, and burden composition
 - 🤖 **Explainer LLM** — translate structured analysis findings into clear, natural language explanations with fidelity validation
@@ -28,8 +28,9 @@ streamlit run app_web.py
 ```
 
 The verified prototype URL is `http://localhost:8501` when Streamlit uses its default port.
-The interface provides Data Explorer/Cleaner, RAG Chat, the Sinter predictor, and a source catalogue. Data Explorer profiles
-CSV/Excel inputs read-only, prioritizes analyzer findings and applicable workflow suggestions, and displays
+The interface provides Data Ingestion, RAG Chat, and the Sinter predictor. Data Ingestion stages
+CSV/Excel or text uploads without adding them to the catalogue. Tabular inputs are analysed read-only,
+prioritize analyzer findings and applicable workflow suggestions, and display
 their existing supporting values. Validated plain-language explanations are primary, with source findings,
 statistics, and validation details kept available as secondary detail. Limitations and the controlled
 cleaning review remain available. The Cleaner never changes data until selected proposals are approved,
@@ -52,11 +53,14 @@ several minutes on CPU and does not require network access.
 
 ## Source storage and catalogue
 
-The **Sources** tab registers `.txt`, `.csv`, `.xlsx`, and `.xls` files in the
-local PARSE catalogue. Originals are retained byte-for-byte, source identity is
-derived from content and source type, and repeated uploads add source locations
-instead of overwriting another source. Processing status, missing-value or
-failure issues, and links to normalized artifacts are available for inspection.
+The **Data Ingestion** tab registers `.txt`, `.csv`, `.xlsx`, and `.xls` files in
+the local PARSE catalogue only after explicit confirmation. Originals are
+retained byte-for-byte, source identity is derived from content and source type,
+and repeated uploads add source locations instead of overwriting another source.
+Tabular files are retained as catalogue artifacts; text sources are added to the
+existing retrieval index and are marked indexed only after inclusion is verified.
+Processing status, index failures, missing-value issues, and normalized artifacts
+are available in the catalogue inspection area at the bottom of the workflow.
 
 - `storage/private/originals/` and `storage/public/originals/` retain categorized
   original files locally.
@@ -67,7 +71,9 @@ failure issues, and links to normalized artifacts are available for inspection.
 - `storage/derived/` remains available for reproducible analysis outputs.
 
 The `parse.source_catalogue.SourceCatalogue` API supports local files through
-`register_file()` and uploaded bytes through `register_upload()`. The registry
+`register_file()` and direct uploads through `register_upload()`. The guided UI
+uses `register_confirmed_upload()` after review and explicit approval. Duplicate
+content cannot be assigned conflicting resource categories. The registry
 reuses PARSE `ResourceManifest`, `SourceRef`, `Provenance`, `Issue`, and
 `KnowledgeItem` contracts. Runtime catalogue files are ignored by Git. It does
 not implement public web crawling, cloud storage, or permissions management.

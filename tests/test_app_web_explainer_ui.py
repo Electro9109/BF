@@ -228,8 +228,10 @@ def test_unvalidated_result_displays_original_finding():
     assert _explainer_display_content(validated, "Original finding") == "Validated explanation"
 
 
-def test_reprofiling_and_dataset_adoption_clear_explanation_state():
+def test_new_ingestion_and_reanalysis_clear_explanation_state():
     source = APP_WEB_PATH.read_text(encoding="utf-8")
-    assert source.count("st.session_state.explainer_result = None") >= 3
-    assert source.count('st.session_state.explainer_finding_key = ""') >= 3
-    assert source.count('st.session_state.explainer_recommendation = ""') >= 3
+    assert "st.session_state.explainer_result = None" in source
+    assert 'st.session_state.explainer_finding_key = ""' in source
+    assert 'st.session_state.explainer_recommendation = ""' in source
+    assert '"explainer_result"' in source
+    assert "ingestion_analysis_hash = None" in source

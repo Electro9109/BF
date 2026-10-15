@@ -2,11 +2,10 @@
 app_web.py - Streamlit Web UI for the Air-Gapped RAG Engine + ML Predictor.
 Run:  streamlit run app_web.py
 
-Four tabs:
+Three tabs:
   1. RAG Chat   — ask questions about metallurgical documents (unchanged)
   2. Predictor  — input experiment params → get Ts / Tm / Tm-Ts predictions
-  3. Data Explorer — inspect and analyse uploaded datasets
-  4. Sources — register and inspect source files
+  3. Data Ingestion — stage, analyse, review, confirm, and register sources
 
 This file is a thin UI layer.
   - Retrieval/generation logic lives in pipeline/rag_pipeline.py
@@ -52,7 +51,13 @@ import pandas as pd
 from config.paths import DOCS_DIR, LLM_MODEL_DIR, ML_MODEL_DIR
 from config.retrieval import TOP_K
 
-from parse.core.contracts import SourceRef
+from parse.ingestion_workflow import (
+    StagedUpload,
+    create_staged_upload,
+    mark_ingestion_stage,
+    normalize_staged_document,
+    set_staged_upload,
+)
 from pipeline.rag_pipeline import answer_question_structured, build_engine, load_model
 
 MODEL_PATH = LLM_MODEL_DIR
@@ -354,6 +359,14 @@ def init_session():
         "explainer_result":   None,
         "explainer_finding_key": "",
         "explainer_recommendation": "",
+        "ingestion_staged_upload": None,
+        "ingestion_analysis_hash": None,
+        "ingestion_review_hash": None,
+        "ingestion_registration": None,
+        "ingestion_document_chunks": None,
+        "ingestion_stage": "empty",
+        "cleaning_approved": [],
+        "cleaning_rejected": [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -523,6 +536,9 @@ def _simplify_semantic_candidate_row(row: dict) -> dict:
 def _reset_cleaning_result_on_purpose_change() -> None:
     """Drop stale cleaning output when purpose changes (proposals differ by purpose)."""
     st.session_state.cleaning_result = None
+    st.session_state.ingestion_review_hash = None
+    if st.session_state.get("ingestion_analysis_hash"):
+        st.session_state.ingestion_stage = "analysed"
 
 
 init_session()
@@ -585,46 +601,17 @@ with st.sidebar:
     elif engine_ok:
         st.success(f"{chunk_count} chunks indexed")
     else:
-        st.warning("No documents loaded — add .txt files below")
+        st.warning("No documents loaded — use Data Ingestion to register a text source.")
 
     st.divider()
 
-    # -- Documents section --
-    st.markdown("### Documents")
+    # -- Index diagnostics and reload --
+    st.markdown("### Retrieval index")
 
     current_fp = docs_fingerprint(DOCS_DIR)
     loaded_fp  = st.session_state.loaded_fingerprint
     if current_fp != loaded_fp and loaded_fp is not None:
         st.info("Files changed on disk — click Reload Documents")
-
-    uploaded_files = st.file_uploader(
-        "Upload .txt files",
-        type=["txt"],
-        accept_multiple_files=True,
-        help="Files are saved to ./docs and indexed immediately.",
-    )
-    if uploaded_files:
-        docs_path = Path(DOCS_DIR)
-        docs_path.mkdir(parents=True, exist_ok=True)
-        saved = []
-        for uf in uploaded_files:
-            safe_name = Path(uf.name).name
-            if not safe_name.lower().endswith(".txt"):
-                st.warning(f"Skipped non-text upload: {uf.name}")
-                continue
-            dest = docs_path / safe_name
-            dest.write_bytes(uf.read())
-            saved.append(safe_name)
-        try:
-            eng, cks = build_engine(DOCS_DIR)
-            st.session_state.engine             = eng
-            st.session_state.chunks             = cks
-            st.session_state.engine_error       = None
-            st.session_state.loaded_fingerprint = docs_fingerprint(DOCS_DIR)
-            st.success(f"Saved {len(saved)} file(s) — {len(cks)} chunks indexed")
-        except Exception as exc:
-            st.session_state.engine_error = str(exc)
-            st.error(f"Index failed after upload: {exc}")
 
     if st.button("Reload Documents", use_container_width=True):
         try:
@@ -670,8 +657,8 @@ st.markdown("## P.A.R.S.E")
 st.caption("Process · Analysis · Retrieval · Synthesis · Evaluation — Fully offline metallurgical assistant.")
 st.divider()
 
-tab_rag, tab_pred, tab_eda, tab_sources = st.tabs(
-    ["🔍 RAG Chat", "🧮 Predictor", "📊 Data Explorer", "📚 Sources"]
+tab_rag, tab_pred, tab_ingestion = st.tabs(
+    ["🔍 RAG Chat", "🧮 Predictor", "📥 Data Ingestion"]
 )
 
 
@@ -740,7 +727,7 @@ with tab_rag:
         if not st.session_state.engine:
             response = (
                 "No documents are indexed yet. "
-                "Upload .txt files or click Reload Documents in the sidebar."
+                "Register a .txt source in Data Ingestion or click Reload Documents."
             )
             with st.chat_message("assistant"):
                 st.markdown(response)
@@ -1094,64 +1081,191 @@ with tab_pred:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — DATA EXPLORER
+# TAB 3 — DATA INGESTION
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tab_eda:
-    st.markdown('<div class="section-header">Understand a Dataset</div>', unsafe_allow_html=True)
-    st.caption("Upload a CSV or Excel file to inspect its structure, quality, and relationships. The uploaded data is profiled read-only.")
-
-    eda_file = st.file_uploader(
-        "Dataset",
-        type=["csv", "xlsx", "xls"],
-        key="eda_dataset_upload",
+with tab_ingestion:
+    st.markdown('<div class="section-header">Upload and review a source</div>', unsafe_allow_html=True)
+    st.caption(
+        "Uploads remain staged until you explicitly register them. Original bytes are "
+        "preserved; tabular data is catalogued and text documents are added to retrieval."
     )
-    analysis_objective = st.text_input(
-        "Analysis objective (optional)",
-        placeholder="For example: identify attributes relevant to prediction",
-        key="analysis_objective",
+    uploaded_file = st.file_uploader(
+        "Source file",
+        type=["txt", "csv", "xlsx", "xls"],
+        key="ingestion_upload",
     )
-    if st.button("Profile dataset", type="primary", disabled=eda_file is None, key="profile_dataset"):
-        try:
-            from parse.eda_ui import analyze_loaded_dataset, load_uploaded_dataset
+    if uploaded_file is not None:
+        uploaded_bytes = uploaded_file.getvalue()
+        provisional = create_staged_upload(
+            uploaded_file.name,
+            uploaded_bytes,
+            resource_class="private_operational_data",
+        )
+        defaults = {
+            "document": "internal_technical_document",
+            "csv": "private_operational_data",
+            "spreadsheet": "private_operational_data",
+        }
+        resource_classes = {
+            "Internal technical document": "internal_technical_document",
+            "Private operational data": "private_operational_data",
+            "Public research": "public_research",
+            "Public dataset": "public_dataset",
+            "Standards reference": "standards_reference",
+        }
+        key_suffix = provisional.content_sha256[:12]
+        selected_class = st.selectbox(
+            "Source category",
+            options=list(resource_classes),
+            index=list(resource_classes.values()).index(
+                defaults[provisional.source.source_type]
+            ),
+            key=f"ingestion_class_{key_suffix}",
+        )
+        display_name = st.text_input(
+            "Display name",
+            value=uploaded_file.name,
+            key=f"ingestion_title_{key_suffix}",
+        )
+        context_text = st.text_input(
+            "Contexts (comma-separated, optional)",
+            key=f"ingestion_contexts_{key_suffix}",
+        )
+        contexts = tuple(
+            item.strip() for item in context_text.split(",") if item.strip()
+        )
+        staged = create_staged_upload(
+            uploaded_file.name,
+            uploaded_bytes,
+            display_name=display_name,
+            resource_class=resource_classes[selected_class],
+            contexts=contexts,
+        )
+        set_staged_upload(st.session_state, staged)
 
-            frame, source = load_uploaded_dataset(
-                eda_file.name,
-                eda_file.getvalue(),
+    staged: StagedUpload | None = st.session_state.get("ingestion_staged_upload")
+    if staged is None:
+        st.info("Choose a text document or tabular file to begin.")
+    else:
+        st.write(
+            f"**Staged:** {staged.display_name} · "
+            f"`{staged.source.source_type}` · "
+            f"SHA-256 `{staged.content_sha256}`"
+        )
+        if staged.source.source_type == "document":
+            try:
+                preview_chunks = normalize_staged_document(staged)
+                st.caption(
+                    f"Text preview: {len(preview_chunks)} retrieval chunk(s); "
+                    "none are indexed before confirmation."
+                )
+            except (OSError, UnicodeError, ValueError) as exc:
+                st.warning(f"Text parsing needs attention before registration: {exc}")
+
+        if staged.source.source_type in {"csv", "spreadsheet"}:
+            analysis_objective = st.text_input(
+                "Analysis objective (optional)",
+                placeholder="For example: identify attributes relevant to prediction",
+                key="analysis_objective",
             )
-            st.session_state.eda_frame = frame
-            st.session_state.eda_working_dataset = "original_upload"
-            st.session_state.analysis_bundle = analyze_loaded_dataset(
-                frame, source, analysis_objective or None,
-            )
-            st.session_state.eda_result = st.session_state.analysis_bundle.eda
-            from parse.semantic_analysis import HumanContext
-            st.session_state.analysis_context = HumanContext()
-            st.session_state.cleaning_result = None
-            st.session_state.explainer_result = None
-            st.session_state.explainer_finding_key = ""
-            st.session_state.explainer_recommendation = ""
-        except Exception as exc:
+        else:
+            analysis_objective = None
+        if (
+            st.session_state.get("ingestion_analysis_hash") == staged.content_sha256
+            and st.session_state.get("ingestion_analysis_objective")
+            != analysis_objective
+        ):
             st.session_state.eda_result = None
             st.session_state.eda_frame = None
             st.session_state.analysis_bundle = None
+            st.session_state.cleaning_result = None
+            st.session_state.analysis_context = None
             st.session_state.explainer_result = None
-            st.session_state.explainer_finding_key = ""
-            st.session_state.explainer_recommendation = ""
-            st.error(f"Dataset profiling failed: {exc}")
+            st.session_state.ingestion_analysis_hash = None
+            st.session_state.ingestion_review_hash = None
+            st.session_state.ingestion_stage = "staged"
+
+        analyze_label = (
+            "Analyse document"
+            if staged.source.source_type == "document"
+            else "Analyse dataset"
+        )
+        if st.button(analyze_label, type="primary", key="analyse_staged_source"):
+            try:
+                if staged.source.source_type == "document":
+                    chunks = normalize_staged_document(staged)
+                    st.session_state.ingestion_document_chunks = chunks
+                    st.session_state.eda_result = None
+                    st.session_state.eda_frame = None
+                    st.session_state.analysis_bundle = None
+                    st.session_state.cleaning_result = None
+                else:
+                    from parse.eda_ui import analyze_loaded_dataset, load_uploaded_dataset
+
+                    frame, _ = load_uploaded_dataset(staged.filename, staged.content)
+                    st.session_state.eda_frame = frame
+                    st.session_state.eda_working_dataset = "original_upload"
+                    st.session_state.analysis_bundle = analyze_loaded_dataset(
+                        frame, staged.source, analysis_objective or None
+                    )
+                    st.session_state.eda_result = st.session_state.analysis_bundle.eda
+                    from parse.semantic_analysis import HumanContext
+
+                    st.session_state.analysis_context = HumanContext()
+                    st.session_state.cleaning_result = None
+                    st.session_state.ingestion_document_chunks = None
+                st.session_state.explainer_result = None
+                st.session_state.explainer_finding_key = ""
+                st.session_state.explainer_recommendation = ""
+                st.session_state.ingestion_analysis_hash = staged.content_sha256
+                st.session_state.ingestion_analysis_objective = analysis_objective
+                st.session_state.ingestion_review_hash = None
+                st.session_state.ingestion_registration = None
+                mark_ingestion_stage(
+                    st.session_state, "analysed", staged.content_sha256
+                )
+            except Exception as exc:
+                st.session_state.eda_result = None
+                st.session_state.eda_frame = None
+                st.session_state.analysis_bundle = None
+                st.session_state.ingestion_document_chunks = None
+                st.session_state.ingestion_analysis_hash = None
+                st.session_state.ingestion_stage = "staged"
+                st.error(f"Source analysis failed: {exc}")
+
+        if (
+            staged.source.source_type == "document"
+            and st.session_state.get("ingestion_analysis_hash")
+            == staged.content_sha256
+        ):
+            chunks = st.session_state.get("ingestion_document_chunks") or []
+            st.success(
+                f"Document parsed into {len(chunks)} chunk(s). Review complete; "
+                "it is not yet part of the retrieval index."
+            )
 
     eda_result = st.session_state.get("eda_result")
     analysis_bundle = st.session_state.get("analysis_bundle")
+    active_staged: StagedUpload | None = st.session_state.get("ingestion_staged_upload")
+    if (
+        active_staged is not None
+        and active_staged.source.source_type in {"csv", "spreadsheet"}
+        and st.session_state.get("ingestion_analysis_hash")
+        == active_staged.content_sha256
+        and eda_result is not None
+    ):
+        st.markdown("### Analysis review")
     if eda_result is None:
-        st.info("Upload a dataset and select Profile dataset to begin.")
+        if active_staged is not None and active_staged.source.source_type in {"csv", "spreadsheet"}:
+            st.info("Analyse the staged dataset to review its profile and cleaning proposals.")
     else:
-        if st.session_state.get("eda_working_dataset") == "cleaned_adopted":
-            st.info(
-                "**Working dataset:** cleaned version adopted after an approved cleaning run. "
-                "Profile a new upload to return to the original file."
-            )
+        if active_staged is None or st.session_state.get(
+            "ingestion_analysis_hash"
+        ) != active_staged.content_sha256:
+            st.warning("The displayed analysis does not match the current staged file.")
         else:
-            st.caption("**Working dataset:** original upload (unchanged file).")
+            st.caption("**Working dataset:** original staged upload (unchanged).")
 
         overview = st.columns(4)
         overview[0].metric("Rows", eda_result.dataset_profile.row_count)
@@ -1416,6 +1530,9 @@ with tab_eda:
                                 selected_candidate_id, confirmation_action, selected_candidate.attribute,
                                 confirmation_meaning or None, reviewer,
                             ))
+                            st.session_state.cleaning_result = None
+                            st.session_state.ingestion_review_hash = None
+                            st.session_state.ingestion_stage = "analysed"
                             st.success("Context recorded explicitly; the dataset and EDA result were not changed.")
                 context = st.session_state.get("analysis_context")
                 if context and context.confirmations:
@@ -1502,30 +1619,50 @@ with tab_eda:
                     format_func=lambda value: proposal_labels[value],
                     key="cleaning_approved",
                 )
-                
-                if st.button("Apply approved changes", type="primary", key="apply_cleaning"):
-                    # Create HumanDecisions for approved proposals
-                    decisions = [
-                        HumanDecision(
-                            decision_id=f"dec_{i}",
-                            proposal_id=pid,
-                            action="APPROVE",
-                            modifications={},
-                            rationale="Approved via UI",
-                            reviewer="User",
-                            created_at=pd.Timestamp.now().isoformat()
-                        )
-                        for i, pid in enumerate(approved)
-                    ]
-                    
-                    st.session_state.cleaning_result = apply_cleaning(
-                        st.session_state.eda_frame, 
-                        decisions=decisions, 
-                        context=cleaning_context
-                    )
+                rejected = st.multiselect(
+                    "Reject transformations",
+                    options=list(proposal_labels),
+                    format_func=lambda value: proposal_labels[value],
+                    key="cleaning_rejected",
+                )
             else:
                 approved = []
+                rejected = []
                 st.info("No automatic transformation proposal is available. Review-only issues remain visible.")
+
+            if st.button(
+                "Apply review and keep original",
+                type="primary",
+                key="apply_cleaning",
+            ):
+                overlap = set(approved) & set(rejected)
+                if overlap:
+                    st.warning("A proposal cannot be both approved and rejected.")
+                else:
+                    decisions = [
+                        HumanDecision(
+                            decision_id=f"decision-{index + 1}",
+                            proposal_id=proposal_id,
+                            action=action,
+                            modifications={},
+                            rationale=f"{action.title()} via Data Ingestion review",
+                            reviewer="User",
+                            created_at=pd.Timestamp.now().isoformat(),
+                        )
+                        for index, (proposal_id, action) in enumerate(
+                            [
+                                *((proposal_id, "APPROVE") for proposal_id in approved),
+                                *((proposal_id, "REJECT") for proposal_id in rejected),
+                            ]
+                        )
+                    ]
+                    st.session_state.cleaning_result = apply_cleaning(
+                        st.session_state.eda_frame,
+                        decisions=decisions,
+                        context=cleaning_context,
+                    )
+                    st.session_state.ingestion_review_hash = active_staged.content_sha256
+                    st.session_state.ingestion_stage = "reviewed"
 
             cleaning_result = st.session_state.get("cleaning_result")
             if cleaning_result is not None:
@@ -1548,43 +1685,6 @@ with tab_eda:
                     key="download_cleaning_result",
                 )
 
-                if st.button(
-                    "Use cleaned data for further analysis",
-                    type="secondary",
-                    key="adopt_cleaned_working_frame",
-                ):
-                    from parse.eda_ui import analyze_loaded_dataset
-
-                    try:
-                        adopted_frame = cleaning_result.cleaned
-                        base_source = st.session_state.analysis_bundle.eda.request.source
-                        adopted_label = base_source.label or base_source.source_id
-                        adopted_source = SourceRef(
-                            base_source.source_id,
-                            base_source.source_type,
-                            locator=base_source.locator,
-                            label=f"{adopted_label} (cleaned, adopted)",
-                        )
-                        objective = st.session_state.get("analysis_objective") or None
-                        adopted_bundle = analyze_loaded_dataset(
-                            adopted_frame,
-                            adopted_source,
-                            objective,
-                        )
-                        st.session_state.eda_frame = adopted_frame
-                        st.session_state.eda_working_dataset = "cleaned_adopted"
-                        st.session_state.analysis_bundle = adopted_bundle
-                        st.session_state.eda_result = adopted_bundle.eda
-                        st.session_state.explainer_result = None
-                        st.session_state.explainer_finding_key = ""
-                        st.session_state.explainer_recommendation = ""
-                        st.success(
-                            "Working dataset updated to the cleaned frame. "
-                            "Detected issues and dataset analysis below reflect this version."
-                        )
-                    except Exception as exc:
-                        st.error(f"Adopting cleaned data failed: {exc}")
-
             st.download_button(
                 "Download EDA result (JSON)",
                 data=json.dumps(eda_result.to_dict(), indent=2, default=str),
@@ -1595,12 +1695,249 @@ with tab_eda:
         else:
             st.warning("Please profile the dataset first to enable context-aware cleaning.")
 
+    st.divider()
+    st.markdown("### Confirm and register")
+    staged = st.session_state.get("ingestion_staged_upload")
+    analysis_ready = (
+        staged is not None
+        and st.session_state.get("ingestion_analysis_hash")
+        == staged.content_sha256
+    )
+    review_ready = (
+        staged is not None
+        and (
+            staged.source.source_type == "document"
+            or st.session_state.get("ingestion_review_hash")
+            == staged.content_sha256
+        )
+    )
+    if staged is None:
+        st.info("Stage and analyse a source before registration.")
+    elif not analysis_ready:
+        st.info("Analyse the current staged upload before confirming registration.")
+    elif not review_ready:
+        st.info(
+            "Review the analysis and cleaning options, then apply the review "
+            "before choosing whether to keep or register a cleaned dataset."
+        )
+    else:
+        is_document = staged.source.source_type == "document"
+        review = st.session_state.get("cleaning_result")
+        reviewed_ready = (
+            not is_document
+            and review is not None
+            and st.session_state.get("ingestion_review_hash")
+            == staged.content_sha256
+        )
+        version_options = ["Original upload"]
+        if reviewed_ready:
+            version_options.append("Reviewed working copy")
+        selected_version = st.radio(
+            "Final dataset version",
+            options=version_options,
+            horizontal=True,
+            key=f"ingestion_version_{staged.content_sha256[:12]}",
+        )
+        if is_document:
+            final_content = None
+            final_hash = staged.content_sha256
+        else:
+            final_frame = (
+                review.cleaned
+                if selected_version == "Reviewed working copy"
+                else st.session_state.eda_frame
+            )
+            final_content = final_frame.to_csv(
+                index=False, lineterminator="\n"
+            ).encode("utf-8")
+            final_hash = hashlib.sha256(final_content).hexdigest()
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 4 — SOURCES
-# ══════════════════════════════════════════════════════════════════════════════
+        st.caption(
+            f"Selected artifact SHA-256: `{final_hash}`. "
+            "The original upload will remain preserved."
+        )
+        confirmed = st.checkbox(
+            "I reviewed this source and explicitly confirm registration.",
+            key=f"ingestion_confirm_{staged.content_sha256[:12]}_{final_hash[:12]}",
+        )
+        registration = st.session_state.get("ingestion_registration")
+        already_registered = (
+            registration is not None
+            and registration.get("content_sha256") == staged.content_sha256
+            and registration.get("final_content_sha256") == final_hash
+            and registration.get("status") in {"registered", "indexed"}
+        )
+        if already_registered:
+            st.success(
+                f"Registered as `{registration['resource_id']}` "
+                f"({registration['status']})."
+            )
+        elif (
+            registration is not None
+            and registration.get("content_sha256") == staged.content_sha256
+            and registration.get("final_content_sha256") == final_hash
+            and registration.get("status") in {"failed", "index_failed"}
+        ):
+            st.warning(
+                f"Last registration attempt is {registration['status']}. "
+                "Inspect the catalogue issue and retry after resolving it."
+            )
+        if st.button(
+            "Confirm and register source",
+            type="primary",
+            disabled=not confirmed or already_registered,
+            key="confirm_source_registration",
+        ):
+            from parse.source_catalogue import (
+                SourceCatalogue,
+                SourceCategoryConflict,
+                SourceIngestionError,
+            )
 
-with tab_sources:
-    from parse.source_ui import render_source_management
+            catalogue = SourceCatalogue()
+            cleaning_result = (
+                review
+                if reviewed_ready and selected_version == "Reviewed working copy"
+                else None
+            )
+            workflow_metadata = {
+                "analysis_content_sha256": staged.content_sha256,
+                "analysis_objective": st.session_state.get(
+                    "ingestion_analysis_objective"
+                ),
+                "selected_version": selected_version,
+                "reviewed": reviewed_ready,
+                "human_decisions": (
+                    [decision.to_dict() for decision in review.human_decisions]
+                    if reviewed_ready
+                    else []
+                ),
+                "approved_transformations": (
+                    [
+                        decision.proposal_id
+                        for decision in review.human_decisions
+                        if decision.action == "APPROVE"
+                    ]
+                    if reviewed_ready
+                    else []
+                ),
+                "rejected_transformations": (
+                    [
+                        decision.proposal_id
+                        for decision in review.human_decisions
+                        if decision.action == "REJECT"
+                    ]
+                    if reviewed_ready
+                    else []
+                ),
+                "changes": (
+                    [change.to_dict() for change in review.changes]
+                    if reviewed_ready
+                    else []
+                ),
+                "validation": (
+                    review.validation.to_dict()
+                    if reviewed_ready and review.validation is not None
+                    else None
+                ),
+                "unresolved_issue_ids": (
+                    list(review.unresolved_issue_ids) if reviewed_ready else []
+                ),
+            }
+            try:
+                entry = catalogue.register_confirmed_upload(
+                    staged.filename,
+                    staged.content,
+                    final_content=final_content,
+                    title=staged.display_name,
+                    resource_class=staged.resource_class,
+                    source_location=staged.source.locator,
+                    contexts=list(staged.contexts),
+                    workflow_metadata=workflow_metadata,
+                )
+            except SourceCategoryConflict as exc:
+                st.error(f"Registration blocked: {exc}")
+            except SourceIngestionError as exc:
+                st.session_state.ingestion_registration = {
+                    "resource_id": exc.entry.manifest.resource_id,
+                    "content_sha256": staged.content_sha256,
+                    "final_content_sha256": final_hash,
+                    "status": "failed",
+                }
+                st.session_state.ingestion_stage = "registration_failed"
+                st.error(f"{exc}. The staged original remains available to retry.")
+            except (OSError, UnicodeError, ValueError, TypeError, RuntimeError) as exc:
+                resource_id = f"resource-{staged.source.source_id.removeprefix('sha256:')}"
+                partial = catalogue.get_source(resource_id)
+                if partial is not None:
+                    catalogue.mark_registration_failed(resource_id, str(exc))
+                    st.session_state.ingestion_stage = "registration_failed"
+                    st.session_state.ingestion_registration = {
+                        "resource_id": resource_id,
+                        "content_sha256": staged.content_sha256,
+                        "final_content_sha256": final_hash,
+                        "status": "failed",
+                    }
+                st.error(
+                    f"Registration failed: {exc}. Any partial catalogue state is "
+                    "marked failed, and the staged original remains available to retry."
+                )
+            else:
+                status = entry.manifest.processing_state
+                if is_document:
+                    try:
+                        with st.spinner("Refreshing retrieval index..."):
+                            engine, chunks = build_engine(DOCS_DIR)
+                        registered_source = f"{entry.manifest.resource_id}.txt"
+                        included_chunks = [
+                            chunk for chunk in chunks
+                            if chunk.source == registered_source
+                        ]
+                        if not included_chunks:
+                            raise RuntimeError(
+                                "The registered text source was not present in "
+                                "the rebuilt retrieval index."
+                            )
+                        entry = catalogue.mark_indexed(
+                            entry.manifest.resource_id, len(included_chunks)
+                        )
+                    except (OSError, UnicodeError, ValueError, RuntimeError) as exc:
+                        entry = catalogue.mark_index_failed(
+                            entry.manifest.resource_id, str(exc)
+                        )
+                        st.session_state.engine_error = str(exc)
+                        st.error(
+                            "Source was registered, but index refresh failed. "
+                            f"The failure is recorded and can be retried: {exc}"
+                        )
+                        status = "index_failed"
+                    else:
+                        st.session_state.engine = engine
+                        st.session_state.chunks = chunks
+                        st.session_state.engine_error = None
+                        st.session_state.loaded_fingerprint = docs_fingerprint(DOCS_DIR)
+                        status = "indexed"
+                        st.success(
+                            f"Registered and verified {len(included_chunks)} "
+                            "retrieval chunk(s)."
+                        )
+                else:
+                    st.success(
+                        "Tabular source registered in the catalogue; it was not "
+                        "added to the text retrieval index."
+                    )
+                st.session_state.ingestion_registration = {
+                    "resource_id": entry.manifest.resource_id,
+                    "content_sha256": staged.content_sha256,
+                    "final_content_sha256": final_hash,
+                    "status": "registered" if status == "normalized" else status,
+                }
+                st.session_state.ingestion_stage = (
+                    "indexed" if status == "indexed" else
+                    "index_failed" if status == "index_failed" else "registered"
+                )
+                st.rerun()
 
-    render_source_management()
+    from parse.source_ui import render_catalogue_inspection
+
+    render_catalogue_inspection()

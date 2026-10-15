@@ -48,6 +48,10 @@ class SourceIngestionError(RuntimeError):
         self.entry = entry
 
 
+class SourceCategoryConflict(ValueError):
+    """Identical content is already registered under a different category."""
+
+
 class SourceCatalogue:
     """SQLite metadata registry with immutable originals and derived artifacts."""
 
@@ -206,6 +210,16 @@ class SourceCatalogue:
                 "SELECT manifest_json FROM resources WHERE source_type = ? AND content_hash = ?",
                 (source_type, content_hash),
             ).fetchone()
+            if row is not None:
+                existing_manifest = ResourceManifest.from_dict(
+                    json.loads(row["manifest_json"])
+                )
+                if existing_manifest.resource_class != resource_class:
+                    raise SourceCategoryConflict(
+                        "Identical source content is already registered as "
+                        f"{existing_manifest.resource_class}; it cannot also be "
+                        f"registered as {resource_class}."
+                    )
             if row is None:
                 manifest = candidate_manifest
                 self._write_immutable(original_path, content)
@@ -221,6 +235,11 @@ class SourceCatalogue:
                 )
             else:
                 manifest = ResourceManifest.from_dict(json.loads(row["manifest_json"]))
+                if manifest.resource_class != resource_class:
+                    raise SourceCategoryConflict(
+                        f"This content is already registered as "
+                        f"{manifest.resource_class!r}, not {resource_class!r}."
+                    )
                 original_name = str(
                     manifest.metadata.get("original_filename", safe_filename)
                 )
@@ -306,6 +325,352 @@ class SourceCatalogue:
         if completed is None:
             raise RuntimeError(f"Normalized source could not be read back: {resource_id}")
         return completed
+
+    def register_confirmed_upload(
+        self,
+        filename: str,
+        original_content: bytes,
+        *,
+        final_content: bytes | None = None,
+        title: str | None = None,
+        resource_class: str | None = None,
+        source_location: str | None = None,
+        contexts: list[str] | None = None,
+        workflow_metadata: dict[str, Any] | None = None,
+    ) -> CatalogueEntry:
+        """Register approved source bytes and the chosen normalized artifact.
+
+        ``original_content`` determines source identity and is always retained.
+        For tabular inputs, ``final_content`` is the normalized CSV selected by
+        the reviewer; omitted content falls back to the unchanged source.
+        """
+        safe_filename = self._safe_filename(filename)
+        workflow_metadata = json.loads(
+            json.dumps(workflow_metadata or {}, ensure_ascii=False, default=str)
+        )
+        source_type, _default_class, _content_type = self._source_type(safe_filename)
+        if source_type == "document" and final_content is not None:
+            raise ValueError("Text document artifacts are produced by normalization")
+        if source_type in {"csv", "spreadsheet"} and final_content is None:
+            from parse.eda_ui import load_uploaded_dataset
+
+            frame, _source_ref = load_uploaded_dataset(safe_filename, original_content)
+            final_content = frame.to_csv(index=False, lineterminator="\n").encode("utf-8")
+        if source_type in {"csv", "spreadsheet"}:
+            if not isinstance(final_content, bytes):
+                raise TypeError("final_content must be bytes")
+            from parse.eda_ui import load_uploaded_dataset
+
+            load_uploaded_dataset("selected-artifact.csv", final_content)
+
+        entry = self.register_upload(
+            safe_filename,
+            original_content,
+            title=title,
+            resource_class=resource_class,
+            source_location=source_location,
+        )
+        if source_type == "document":
+            self._update_manifest_metadata(
+                entry.manifest.resource_id,
+                contexts=contexts or [],
+                workflow_metadata=workflow_metadata or {},
+                final_content_sha256=entry.manifest.metadata["content_sha256"],
+                processing_stage="normalized",
+            )
+            return self.get_source(entry.manifest.resource_id) or entry
+
+        if final_content is None:
+            raise RuntimeError("Tabular normalization produced no final content")
+        from parse.eda_ui import load_uploaded_dataset
+
+        final_frame, _ = load_uploaded_dataset("selected-artifact.csv", final_content)
+        final_hash = hashlib.sha256(final_content).hexdigest()
+        relative_path = Path("datasets") / f"{entry.manifest.resource_id}-{final_hash[:16]}.csv"
+        artifact_path = self.normalized_dir / relative_path
+        self._write_immutable(artifact_path, final_content)
+        artifact_id = f"artifact-{entry.manifest.resource_id}-{final_hash[:16]}"
+        missing_counts = {
+            str(column): int(count)
+            for column, count in final_frame.isna().sum().items()
+            if count
+        }
+        issues = [
+            Issue(
+                code="missing_values_present",
+                severity="warning",
+                message=f"{count} missing value(s) remain in column {column!r}.",
+                field=column,
+                source=entry.manifest.source,
+            )
+            for column, count in missing_counts.items()
+        ]
+        artifact = KnowledgeItem(
+            item_id=artifact_id,
+            kind="structured_record",
+            attributes={
+                "artifact_type": "normalized_dataset",
+                "path": str(relative_path),
+                "content_sha256": final_hash,
+                "row_count": len(final_frame.index),
+                "column_count": len(final_frame.columns),
+                "columns": [str(column) for column in final_frame.columns],
+                "missing_value_counts": missing_counts,
+            },
+            provenance=Provenance(
+                sources=[entry.manifest.source],
+                operation="register_confirmed_dataset",
+                method="parse.source_catalogue",
+                parent_ids=[
+                    entry.manifest.source.source_id,
+                    *(
+                        str(item)
+                        for item in (workflow_metadata or {}).get(
+                            "approved_transformations", []
+                        )
+                    ),
+                ],
+            ),
+            issues=issues,
+            incomplete=bool(missing_counts),
+        )
+        self._store_artifact(entry.manifest.resource_id, artifact)
+        self._update_manifest_metadata(
+            entry.manifest.resource_id,
+            contexts=contexts or [],
+            workflow_metadata=workflow_metadata or {},
+            final_content_sha256=final_hash,
+            selected_artifact=str(relative_path),
+            processing_state="normalized",
+            processing_stage="normalized",
+            issues=issues,
+        )
+        result = self.get_source(entry.manifest.resource_id)
+        if result is None:
+            raise RuntimeError(
+                f"Registered source could not be read back: {entry.manifest.resource_id}"
+            )
+        return result
+
+    def mark_indexed(self, resource_id: str) -> CatalogueEntry:
+        """Record successful document inclusion in the active retrieval index."""
+        self._set_processing_state(resource_id, "indexed", None)
+        entry = self.get_source(resource_id)
+        if entry is None:
+            raise KeyError(f"Unknown source resource: {resource_id}")
+        return entry
+
+    def mark_index_failed(self, resource_id: str, message: str) -> CatalogueEntry:
+        """Record a failed retrieval-index refresh without claiming success."""
+        entry = self.get_source(resource_id)
+        if entry is None:
+            raise KeyError(f"Unknown source resource: {resource_id}")
+        issue = Issue(
+            "retrieval_index_failed",
+            "error",
+            message,
+            source=entry.manifest.source,
+        )
+        self._set_processing_state(resource_id, "failed", issue)
+        result = self.get_source(resource_id)
+        if result is None:
+            raise RuntimeError(f"Failed source could not be read back: {resource_id}")
+        return result
+
+    def _set_processing_state(
+        self,
+        resource_id: str,
+        state: str,
+        issue: Issue | None,
+    ) -> None:
+        entry = self.get_source(resource_id)
+        if entry is None:
+            raise KeyError(f"Unknown source resource: {resource_id}")
+        manifest = entry.manifest
+        manifest.processing_state = state
+        if issue is not None:
+            manifest.issues = [
+                existing
+                for existing in manifest.issues
+                if existing.code != issue.code
+            ] + [issue]
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                "UPDATE resources SET manifest_json = ? WHERE resource_id = ?",
+                (json.dumps(manifest.to_dict(), ensure_ascii=False), resource_id),
+            )
+
+    def _store_artifact(
+        self,
+        resource_id: str,
+        artifact: KnowledgeItem,
+    ) -> None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                "SELECT manifest_json FROM resources WHERE resource_id = ?",
+                (resource_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown source resource: {resource_id}")
+            manifest = ResourceManifest.from_dict(json.loads(row["manifest_json"]))
+            connection.execute(
+                "INSERT OR IGNORE INTO artifacts(artifact_id, resource_id, item_json) "
+                "VALUES (?, ?, ?)",
+                (
+                    artifact.item_id,
+                    resource_id,
+                    json.dumps(artifact.to_dict(), ensure_ascii=False),
+                ),
+            )
+            relative_path = str(artifact.attributes["path"])
+            if relative_path not in manifest.derived_artifacts:
+                manifest.derived_artifacts.append(relative_path)
+            connection.execute(
+                "UPDATE resources SET manifest_json = ? WHERE resource_id = ?",
+                (json.dumps(manifest.to_dict(), ensure_ascii=False), resource_id),
+            )
+
+    def _update_manifest_metadata(
+        self,
+        resource_id: str,
+        *,
+        contexts: list[str] | None = None,
+        workflow_metadata: dict[str, Any] | None = None,
+        final_content_sha256: str | None = None,
+        selected_artifact: str | None = None,
+        processing_state: str | None = None,
+        processing_stage: str | None = None,
+        indexed_chunk_count: int | None = None,
+        index_error: str | None = None,
+        issues: list[Issue] | None = None,
+    ) -> None:
+        if workflow_metadata is not None:
+            json.dumps(workflow_metadata)
+        entry = self.get_source(resource_id)
+        if entry is None:
+            raise KeyError(f"Unknown source resource: {resource_id}")
+        manifest = entry.manifest
+        if contexts is not None:
+            manifest.contexts = list(contexts)
+        if final_content_sha256 is not None:
+            manifest.metadata["final_content_sha256"] = final_content_sha256
+        if workflow_metadata is not None:
+            manifest.metadata["workflow"] = workflow_metadata
+        if selected_artifact is not None:
+            manifest.metadata["selected_artifact"] = selected_artifact
+        if processing_state is not None:
+            manifest.processing_state = processing_state
+        if processing_stage is not None:
+            manifest.metadata["processing_stage"] = processing_stage
+        if indexed_chunk_count is not None:
+            manifest.metadata["indexed_chunk_count"] = indexed_chunk_count
+        if index_error is not None or processing_stage in {"indexed", "registration"}:
+            manifest.metadata["index_error"] = index_error
+        if issues is not None:
+            manifest.issues = issues
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                "UPDATE resources SET manifest_json = ? WHERE resource_id = ?",
+                (json.dumps(manifest.to_dict(), ensure_ascii=False), resource_id),
+            )
+
+    def mark_indexed(self, resource_id: str, chunk_count: int) -> CatalogueEntry:
+        if chunk_count < 1:
+            raise ValueError("chunk_count must be positive")
+        entry = self.get_source(resource_id)
+        if entry is None:
+            raise KeyError(f"Unknown source resource: {resource_id}")
+        self._update_manifest_metadata(
+            resource_id,
+            processing_state="indexed",
+            processing_stage="indexed",
+            indexed_chunk_count=chunk_count,
+            index_error=None,
+            issues=[
+                issue
+                for issue in entry.manifest.issues
+                if issue.code not in {
+                    "source_indexing_failed",
+                    "source_registration_failed",
+                }
+            ],
+        )
+        entry = self.get_source(resource_id)
+        if entry is None:
+            raise KeyError(f"Unknown source resource: {resource_id}")
+        return entry
+
+    def mark_index_failed(self, resource_id: str, error: str) -> CatalogueEntry:
+        if not error.strip():
+            raise ValueError("error must be a non-empty string")
+        entry = self.get_source(resource_id)
+        if entry is None:
+            raise KeyError(f"Unknown source resource: {resource_id}")
+        issue = Issue(
+            code="source_indexing_failed",
+            severity="error",
+            message=error,
+            source=entry.manifest.source,
+        )
+        self._update_manifest_metadata(
+            resource_id,
+            processing_state="failed",
+            processing_stage="indexing",
+            index_error=error,
+            issues=[
+                *[
+                    existing
+                    for existing in entry.manifest.issues
+                    if existing.code not in {
+                        "source_indexing_failed",
+                        "source_registration_failed",
+                    }
+                ],
+                issue,
+            ],
+        )
+        entry = self.get_source(resource_id)
+        if entry is None:
+            raise KeyError(f"Unknown source resource: {resource_id}")
+        return entry
+
+    def mark_registration_failed(
+        self,
+        resource_id: str,
+        error: str,
+    ) -> CatalogueEntry:
+        if not error.strip():
+            raise ValueError("error must be a non-empty string")
+        entry = self.get_source(resource_id)
+        if entry is None:
+            raise KeyError(f"Unknown source resource: {resource_id}")
+        issue = Issue(
+            code="source_registration_failed",
+            severity="error",
+            message=error,
+            source=entry.manifest.source,
+        )
+        self._update_manifest_metadata(
+            resource_id,
+            processing_state="failed",
+            processing_stage="registration",
+            index_error=None,
+            issues=[
+                *[
+                    existing
+                    for existing in entry.manifest.issues
+                    if existing.code not in {
+                        "source_registration_failed",
+                        "source_indexing_failed",
+                    }
+                ],
+                issue,
+            ],
+        )
+        failed = self.get_source(resource_id)
+        if failed is None:
+            raise KeyError(f"Unknown source resource: {resource_id}")
+        return failed
 
     @staticmethod
     def _write_immutable(path: Path, content: bytes) -> None:
@@ -466,4 +831,9 @@ class SourceCatalogue:
         return self.normalized_dir / "documents"
 
 
-__all__ = ["CatalogueEntry", "SourceCatalogue", "SourceIngestionError"]
+__all__ = [
+    "CatalogueEntry",
+    "SourceCatalogue",
+    "SourceCategoryConflict",
+    "SourceIngestionError",
+]

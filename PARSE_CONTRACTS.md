@@ -99,7 +99,12 @@ file bytes separately, and registers normalized artifacts with provenance back
 to their source. Source identity is content-derived and scoped by source type,
 so renames retain identity while changed content becomes a distinct source.
 The manifest stores issue summaries and artifact references, not whole dataset
-rows.
+rows. The Data Ingestion workflow keeps uploads staged in session state until
+explicit confirmation. Registration records the original content hash, selected
+final-artifact hash, review decisions, validation results, and unresolved issues.
+Text resources move to `indexed` only after the existing retrieval engine has
+been rebuilt and the registered source is verified in its chunks; tabular
+resources remain catalogue artifacts and are not added to text retrieval.
 
 ## 3. Knowledge Envelopes
 
