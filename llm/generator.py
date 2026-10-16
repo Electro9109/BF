@@ -2,7 +2,7 @@
 llm/generator.py - Runs a single inference pass against the loaded model.
 """
 
-from config.models import GENERATION_TEMPERATURE, MAX_NEW_TOKENS
+from config.models import GENERATION_TEMPERATURE, MAX_NEW_TOKENS, REPETITION_PENALTY
 from llm.domain_prompts import SYSTEM_INSTRUCTION, build_domain_instructions
 from llm.prompts import build_prompt
 
@@ -13,6 +13,7 @@ def generate(
     tokenizer,
     model,
     max_new_tokens: int = MAX_NEW_TOKENS,
+    repetition_penalty: float = REPETITION_PENALTY,
 ) -> str:
     """Run a single inference pass and return the decoded answer string."""
     if tokenizer is None or model is None:
@@ -43,6 +44,7 @@ def generate(
             attention_mask=inputs["attention_mask"],
             max_new_tokens=max_new_tokens,
             temperature=GENERATION_TEMPERATURE,
+            repetition_penalty=repetition_penalty,
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
         )

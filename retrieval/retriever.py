@@ -114,6 +114,22 @@ class RetrievalEngine:
                 matched_topic,
             )
 
+        import re
+
+        has_scenario_intent = bool(
+            re.search(
+                r"\b(?:scenario\s*\d*|experiment\b|experimental|burden mix|blend case)\b",
+                q_lower,
+            )
+        )
+        if has_scenario_intent and candidates is not self.chunks:
+            # Augment topic-filtered candidates with experiment scenario chunks
+            scenario_chunks = [c for c in self.chunks if getattr(c, "role", "reference") == "experiment_scenario"]
+            candidate_ids = {id(c) for c in candidates}
+            for sc in scenario_chunks:
+                if id(sc) not in candidate_ids:
+                    candidates.append(sc)
+
         if not candidates:
             return []
 
@@ -158,10 +174,21 @@ class RetrievalEngine:
                 "Query embedding dimensions do not match indexed document embeddings."
             )
 
-        candidate_pool_size = min(
-            len(candidates),
-            top_n * self._rerank_candidate_multiplier,
+        import re
+
+        has_scenario_intent = bool(
+            re.search(
+                r"\b(?:scenario\s*\d*|experiment\b|experimental|burden mix|blend case)\b",
+                q_lower,
+            )
         )
+        base_pool_size = top_n * self._rerank_candidate_multiplier
+        if has_scenario_intent:
+            target_pool_size = max(base_pool_size, 20)
+        else:
+            target_pool_size = base_pool_size
+
+        candidate_pool_size = min(len(candidates), target_pool_size)
         k = candidate_pool_size
         scores, indices = tmp_index.search(q_vec, k)
 

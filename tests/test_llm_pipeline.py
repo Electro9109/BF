@@ -41,7 +41,7 @@ def test_structured_rag_response_preserves_retrieval_and_context_evidence(monkey
     matches = [(first, 0.91), (second, 0.82)]
     captured = {}
 
-    def fake_generate(question, context, tokenizer, model):
+    def fake_generate(question, context, tokenizer, model, *args, **kwargs):
         captured["context"] = context
         return "Sinter process evidence supports this answer."
 
@@ -52,7 +52,7 @@ def test_structured_rag_response_preserves_retrieval_and_context_evidence(monkey
             return matches
 
     first_passage = (
-        "[Source 1: experiments/experiment_scenarios.txt | Section: overview]\n"
+        "[Source 1: experiments/experiment_scenarios.txt | Role: reference | Section: overview]\n"
         + first.content
     )
     result = answer_question_structured(
@@ -243,7 +243,7 @@ def test_answer_question_uses_position_aware_context_order(monkeypatch):
 
     captured = {}
 
-    def fake_generate(question, context, tokenizer, model):
+    def fake_generate(question, context, tokenizer, model, *args, **kwargs):
         captured["context"] = context
         return "an answer that mentions content"
 
@@ -261,8 +261,8 @@ def test_answer_question_uses_position_aware_context_order(monkeypatch):
     assert context.index("doc2.txt") > context.index("doc3.txt")
     # Matches returned to the caller (not tested here) remain rank-ordered -
     # covered by the assertion above using original rank labels ("Source N").
-    assert "[Source 1: doc1.txt | Section: s]" in context
-    assert "[Source 2: doc2.txt | Section: s]" in context
+    assert "[Source 1: doc1.txt | Role: reference | Section: s]" in context
+    assert "[Source 2: doc2.txt | Role: reference | Section: s]" in context
 
 
 def test_context_assembly_keeps_passages_complete_and_labels_sections():
@@ -284,12 +284,12 @@ def test_context_assembly_keeps_passages_complete_and_labels_sections():
     )
     matches = [(1, (first, 0.9)), (2, (second, 0.8))]
 
-    context = _assemble_context(matches, 100)
+    context = _assemble_context(matches, 120)
 
-    assert "[Source 1: first.txt | Section: overview]" in context
+    assert "[Source 1: first.txt | Role: reference | Section: overview]" in context
     assert "First complete evidence passage." in context
     assert "[Source 2: second.txt" not in context
-    assert len(context) <= 100
+    assert len(context) <= 120
 
 
 def test_context_assembly_marks_an_individually_truncated_passage():
@@ -303,11 +303,11 @@ def test_context_assembly_marks_an_individually_truncated_passage():
         section="mechanism",
     )
 
-    context = _assemble_context([(1, (chunk, 0.9))], 120)
+    context = _assemble_context([(1, (chunk, 0.9))], 140)
 
-    assert len(context) <= 120
+    assert len(context) <= 140
     assert "[Passage truncated to fit context budget.]" in context
-    assert context.startswith("[Source 1: long.txt | Section: mechanism]")
+    assert context.startswith("[Source 1: long.txt | Role: reference | Section: mechanism]")
 
 
 def test_answer_question_skips_generation_if_context_budget_cannot_fit_evidence(monkeypatch):
@@ -339,3 +339,44 @@ def test_lexical_grounding_guard_false_rejects_paraphrase_and_false_accepts_caus
         "I could not find a confident answer"
     )
     assert _apply_hallucination_guard(unsupported_cause, context) == unsupported_cause
+
+
+def test_generation_settings_passed_correctly(monkeypatch):
+    """Verify max_new_tokens and repetition_penalty propagate to generate."""
+    captured = {}
+
+    def fake_generate(question, context, tokenizer, model, max_new_tokens, repetition_penalty):
+        captured["max_new_tokens"] = max_new_tokens
+        captured["repetition_penalty"] = repetition_penalty
+        return "Complete generated answer with sufficient technical evidence."
+
+    monkeypatch.setattr("pipeline.rag_pipeline.generate", fake_generate)
+
+    class FakeEngine:
+        def search(self, query, top_n):
+            c = Chunk("Complete generated answer with sufficient technical evidence.", "", "doc.txt", "topic", "overview")
+            return [(c, 0.9)]
+
+    res = answer_question_structured(
+        "test question",
+        "test query",
+        FakeEngine(),
+        None,
+        None,
+        1,
+        max_new_tokens=768,
+        repetition_penalty=1.12,
+    )
+    assert captured["max_new_tokens"] == 768
+    assert captured["repetition_penalty"] == 1.12
+    assert "Complete generated answer" in res.answer
+
+
+def test_complete_answer_not_artificially_truncated_by_pipeline():
+    """Verify long answers up to hundreds of words are returned without truncation."""
+    from pipeline.rag_pipeline import _apply_hallucination_guard
+    long_answer = "This is a comprehensive response discussing slag basicity, softening temperature, and cohesive zone dynamics. " * 20
+    context = "slag basicity softening temperature cohesive zone"
+    result = _apply_hallucination_guard(long_answer, context)
+    assert len(result) == len(long_answer)
+    assert result.endswith("cohesive zone dynamics. ")

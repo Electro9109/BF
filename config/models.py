@@ -13,6 +13,7 @@ EMBED_MODEL_NAME = "all-MiniLM-L6-v2"  # HF fallback name if local folder absent
 LLM_MODEL_NAME = "Qwen1.5-0.5B-Chat"
 
 # Generation settings
-MAX_NEW_TOKENS = 220
+MAX_NEW_TOKENS = 512
 GENERATION_TEMPERATURE = 0.0
+REPETITION_PENALTY = 1.1
 

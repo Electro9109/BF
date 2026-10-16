@@ -96,7 +96,10 @@ def evaluate_qualitative_scenarios(
     cases: list[dict[str, Any]],
     top_k: int = 5,
 ) -> dict[str, Any]:
-    """Execute retrieval and qualitative scoring across all benchmark scenario cases."""
+    """Execute retrieval and qualitative scoring on retrieved context across all benchmark scenario cases.
+
+    NOTE: This mode scores the retrieved context passages, NOT generated LLM answers.
+    """
     case_results = []
 
     verified_directional_scores = []
@@ -169,6 +172,109 @@ def evaluate_qualitative_scenarios(
         })
 
     aggregate_metrics = {
+        "evaluation_mode": "retrieval_context",
+        "total_cases_evaluated": len(cases),
+        "status_breakdown": status_counts,
+        "eligible_verified_directional_accuracy": (
+            sum(verified_directional_scores) / len(verified_directional_scores)
+            if verified_directional_scores else 0.0
+        ),
+        "verified_case_count": len(verified_directional_scores),
+        "mean_target_variable_coverage": sum(variable_coverage_scores) / len(variable_coverage_scores) if variable_coverage_scores else 0.0,
+        "mean_required_concept_coverage": sum(concept_coverage_scores) / len(concept_coverage_scores) if concept_coverage_scores else 0.0,
+        "mean_caveat_handling": sum(caveat_scores) / len(caveat_scores) if caveat_scores else 0.0,
+        "scenario_retrieval_hit_rate": sum(scenario_hit_scores) / len(scenario_hit_scores) if scenario_hit_scores else 0.0,
+    }
+
+    return {
+        "aggregate_metrics": aggregate_metrics,
+        "case_results": case_results,
+    }
+
+
+def evaluate_live_scenarios(
+    engine,
+    cases: list[dict[str, Any]],
+    tokenizer=None,
+    model=None,
+    top_k: int = 5,
+) -> dict[str, Any]:
+    """Execute live LLM answer generation and separate answer evaluation."""
+    from pipeline.rag_pipeline import answer_question_structured
+
+    case_results = []
+    verified_directional_scores = []
+    variable_coverage_scores = []
+    concept_coverage_scores = []
+    caveat_scores = []
+    scenario_hit_scores = []
+
+    status_counts = {"verified": 0, "conditional": 0, "illustrative": 0, "unresolved": 0}
+
+    for case in cases:
+        cid = case["case_id"]
+        vstatus = case.get("verification_status", "verified")
+        status_counts[vstatus] = status_counts.get(vstatus, 0) + 1
+
+        base_query = case["question"]
+        scenario_id = case.get("scenario_id")
+        if scenario_id and "Scenario" in scenario_id:
+            search_query = f"{scenario_id}: {base_query}"
+        else:
+            search_query = base_query
+
+        rag_response = answer_question_structured(
+            question=base_query,
+            search_query=search_query,
+            engine=engine,
+            tokenizer=tokenizer,
+            model=model,
+            top_n=top_k,
+        )
+
+        retrieved_sources = [c.source for c, _score in rag_response.matches]
+        req_source = case.get("evidence_requirements")
+        scenario_hit = False
+        if isinstance(req_source, str) and ("docs/" in req_source or ".txt" in req_source):
+            expected_stem = Path(req_source).name
+            scenario_hit = any(expected_stem in s for s in retrieved_sources)
+        elif isinstance(req_source, list):
+            scenario_hit = any(any(Path(r).name in s for s in retrieved_sources) for r in req_source)
+        else:
+            scenario_hit = True
+        scenario_hit_scores.append(1.0 if scenario_hit else 0.0)
+
+        answer_text = rag_response.answer or ""
+
+        exp_dirs = case.get("expected_directions", {})
+        dir_acc = score_directional_accuracy(answer_text, exp_dirs)
+        if vstatus == "verified":
+            verified_directional_scores.append(dir_acc)
+
+        var_cov = score_target_variable_coverage(answer_text, case.get("target_variables", []))
+        variable_coverage_scores.append(var_cov)
+
+        con_cov = score_required_concepts(answer_text, case.get("required_concepts", []))
+        concept_coverage_scores.append(con_cov)
+
+        cav_score = score_caveat_handling(answer_text, case.get("required_caveats", []))
+        caveat_scores.append(cav_score)
+
+        case_results.append({
+            "case_id": cid,
+            "verification_status": vstatus,
+            "case_type": case.get("case_type"),
+            "scenario_hit": scenario_hit,
+            "retrieved_sources": retrieved_sources[:3],
+            "generated_answer": answer_text,
+            "directional_accuracy": dir_acc,
+            "target_variable_coverage": var_cov,
+            "required_concept_coverage": con_cov,
+            "caveat_score": cav_score,
+        })
+
+    aggregate_metrics = {
+        "evaluation_mode": "live_llm_answer",
         "total_cases_evaluated": len(cases),
         "status_breakdown": status_counts,
         "eligible_verified_directional_accuracy": (
@@ -193,6 +299,11 @@ def main() -> None:
     parser.add_argument("--eval-set", type=Path, default=DEFAULT_SCENARIO_EVAL_SET)
     parser.add_argument("--docs-dir", type=Path, default=DOCS_DIR)
     parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Run live generation through the LLM pipeline rather than scoring retrieved text alone.",
+    )
     args = parser.parse_args()
 
     engine, chunks = build_engine(str(args.docs_dir))
@@ -200,7 +311,17 @@ def main() -> None:
         data = json.load(f)
 
     cases = data.get("cases", [])
-    report = evaluate_qualitative_scenarios(engine, cases, top_k=args.top_k)
+    if args.live:
+        try:
+            from llm.loader import load_model
+            tokenizer, model = load_model()
+        except Exception as exc:
+            print(f"Error loading model dependencies for live evaluation: {exc}")
+            return
+        report = evaluate_live_scenarios(engine, cases, tokenizer=tokenizer, model=model, top_k=args.top_k)
+    else:
+        report = evaluate_qualitative_scenarios(engine, cases, top_k=args.top_k)
+
     print(json.dumps(report, indent=2))
 
 

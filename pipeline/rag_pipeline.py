@@ -86,7 +86,12 @@ def _assemble_context_with_matches(
     included_matches = []
     for original_rank, (chunk, score) in _order_for_context(ranked_matches):
         sec_label = chunk.section
-        header = f"[Source {original_rank}: {chunk.source} | Section: {sec_label}]\n"
+        role_label = getattr(chunk, "role", "reference")
+        header = (
+            f"[Source {original_rank}: {chunk.source} | "
+            f"Role: {role_label} | "
+            f"Section: {sec_label}]\n"
+        )
         passage = header + chunk.content
         separator = "\n\n" if parts else ""
         remaining = max_context_chars - sum(map(len, parts)) - len(separator)
@@ -114,6 +119,9 @@ def _assemble_context(ranked_matches: list, max_context_chars: int) -> str:
     return _assemble_context_with_matches(ranked_matches, max_context_chars)[0]
 
 
+from config.models import MAX_NEW_TOKENS, REPETITION_PENALTY
+
+
 def answer_question_structured(
     question: str,
     search_query: str,
@@ -122,6 +130,8 @@ def answer_question_structured(
     model,
     top_n: int,
     max_context_chars: int = 12000,
+    max_new_tokens: int = MAX_NEW_TOKENS,
+    repetition_penalty: float = REPETITION_PENALTY,
 ) -> RAGResponse:
     """
     Run retrieval and generation while preserving PARSE evidence contracts.
@@ -178,7 +188,14 @@ def answer_question_structured(
         )
 
     try:
-        response = generate(question, context, tokenizer, model)
+        response = generate(
+            question,
+            context,
+            tokenizer,
+            model,
+            max_new_tokens=max_new_tokens,
+            repetition_penalty=repetition_penalty,
+        )
     except Exception:
         logger.exception("Answer generation failed for question %r", question)
         return RAGResponse(
@@ -216,6 +233,8 @@ def answer_question(
     model,
     top_n: int,
     max_context_chars: int = 12000,
+    max_new_tokens: int = MAX_NEW_TOKENS,
+    repetition_penalty: float = REPETITION_PENALTY,
 ) -> tuple[str, list[tuple[Chunk, float]]]:
     """Compatibility wrapper preserving the established answer/matches tuple."""
     result = answer_question_structured(
@@ -226,6 +245,8 @@ def answer_question(
         model,
         top_n,
         max_context_chars,
+        max_new_tokens=max_new_tokens,
+        repetition_penalty=repetition_penalty,
     )
     return result.answer, result.matches
 

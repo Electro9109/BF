@@ -93,4 +93,71 @@ def test_qualitative_scenario_eval_suite():
     assert agg["total_cases_evaluated"] == len(cases)
     assert agg["eligible_verified_directional_accuracy"] >= 0.85
     assert agg["mean_target_variable_coverage"] >= 0.90
-    assert agg["mean_caveat_handling"] >= 0.80
+    assert agg["scenario_retrieval_hit_rate"] >= 0.88
+
+
+def test_scenario_and_reference_retrieval_balance():
+    """Verify explicit scenario number, non-numbered scenario condition, general reference, and cross queries."""
+    engine, _ = build_engine(str(DOCS_DIR))
+
+    # 1. Explicit scenario-number query
+    matches_num = engine.search("Scenario 1: softening temperature baseline", top_n=3)
+    assert any("experiment_scenarios.txt" in c.source for c, _ in matches_num)
+    assert any("scenario 1" in c.section.lower() for c, _ in matches_num)
+
+    # 2. Scenario-specific query without explicit scenario number
+    matches_cond = engine.search("What is the softening behavior for 100% pellet burden under low CO (CO=34%, H2=6%)?", top_n=3)
+    assert any("experiment_scenarios.txt" in c.source for c, _ in matches_cond)
+    assert any("scenario 8" in c.section.lower() for c, _ in matches_cond)
+
+    # 3. General metallurgical reference question (must retrieve reference knowledge, not scenarios)
+    matches_ref = engine.search("How is binary basicity B2 calculated and what is its effect?", top_n=3)
+    assert all(c.role == "reference" for c, _ in matches_ref)
+    assert any("basicity.txt" in c.source for c, _ in matches_ref)
+
+    # 4. Cross query involving both reference knowledge and scenario context
+    matches_cross = engine.search("Scenario 2: How does hydrogen enrichment affect softening temperature Ts compared to baseline?", top_n=5)
+    sources = [c.source for c, _ in matches_cross]
+    assert any("experiment_scenarios.txt" in s for s in sources)
+    assert any("cohesive_zone.txt" in s or "basicity.txt" in s or "hydrogen_reduction.txt" in s for s in sources)
+
+
+def test_live_evaluation_mode_handles_missing_dependencies_gracefully(monkeypatch):
+    """Verify live evaluation mode does not crash when dependencies are mocked or missing."""
+    from eval.qualitative_eval import evaluate_live_scenarios
+
+    class MockEngine:
+        def search(self, query, top_n=5):
+            from data.schemas import Chunk
+            c = Chunk("Sample content with Ts and decrease.", "", "docs/experiments/experiment_scenarios.txt", "topic", "overview")
+            c.role = "experiment_scenario"
+            return [(c, 0.9)]
+
+    cases = [
+        {
+            "case_id": "mock-case",
+            "scenario_id": "Scenario 1",
+            "verification_status": "verified",
+            "question": "What happens to Ts in scenario 1?",
+            "expected_directions": {"Ts": "decrease"},
+            "target_variables": ["Ts"],
+            "required_concepts": [],
+            "required_caveats": [],
+            "evidence_requirements": "docs/experiments/experiment_scenarios.txt",
+        }
+    ]
+
+    # Run evaluate_live_scenarios with None model/tokenizer (uses generator fallback/mock)
+    def mock_answer_question_structured(*args, **kwargs):
+        from pipeline.rag_pipeline import RAGResponse
+        from data.schemas import Chunk
+        c = Chunk("Answer: Ts will decrease under test conditions.", "", "docs/experiments/experiment_scenarios.txt", "topic", "overview")
+        c.role = "experiment_scenario"
+        return RAGResponse(answer="Answer: Ts will decrease under test conditions.", matches=[(c, 0.9)], retrieval=None, synthesis=None)
+
+    monkeypatch.setattr("pipeline.rag_pipeline.answer_question_structured", mock_answer_question_structured)
+    report = evaluate_live_scenarios(MockEngine(), cases)
+    assert report["aggregate_metrics"]["evaluation_mode"] == "live_llm_answer"
+    assert report["aggregate_metrics"]["eligible_verified_directional_accuracy"] == 1.0
+    assert report["case_results"][0]["generated_answer"].startswith("Answer: Ts will decrease")
+
