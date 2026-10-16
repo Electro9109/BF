@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 import pandas as pd
 
 from departments.blast_furnace.feature_processing import (
-    CHEM_COLS, TARGET_COLS,
+    CHEM_COLS, TARGET_COLS, CHEM_RANGES, ATM_RANGES, BURDEN_RANGES,
     _parse_atmosphere, _encode_burden_numeric, _encode_test_type,
 )
 from config.paths import ML_MODEL_DIR
@@ -136,8 +136,14 @@ class Predictor:
         burden: str = None,
         test_type: str = None,
         parsed_condition: dict = None,
-    ) -> np.ndarray:
-        """Build one feature row from raw inputs or parsed conditions."""
+    ) -> tuple[np.ndarray, list[str]]:
+        """Build one feature row from raw inputs or parsed conditions.
+        
+        Returns:
+            (feature_row, warnings) where warnings is a list of range violation messages
+        """
+        warnings = []
+        
         missing = [column for column in CHEM_COLS if column not in chemistry]
         if missing:
             raise PredictionInputError(f"Missing chemistry values: {missing}")
@@ -152,6 +158,14 @@ class Predictor:
                 invalid.append(column)
         if invalid:
             raise PredictionInputError(f"Invalid chemistry values: {invalid}")
+
+        # Check chemistry ranges and warn
+        for column in CHEM_COLS:
+            if column in CHEM_RANGES:
+                val = float(chemistry[column])
+                low, high = CHEM_RANGES[column]
+                if val < low or val > high:
+                    warnings.append(f"Chemistry '{column}'={val} is outside training distribution range [{low}, {high}].")
 
         if "atmosphere" in self._scalers and parsed_condition is None and not test_condition:
             raise PredictionInputError("An atmosphere condition is required")
@@ -173,6 +187,13 @@ class Predictor:
                     "H2_pct": parsed_condition.get("H2_pct", 0.0),
                     "N2_pct": parsed_condition.get("N2_pct", 0.0)
                 }])
+                # Check atmosphere ranges
+                for col, low, high in [("CO_pct", *ATM_RANGES["CO_pct"]), 
+                                      ("H2_pct", *ATM_RANGES["H2_pct"]), 
+                                      ("N2_pct", *ATM_RANGES["N2_pct"])]:
+                    val = parsed_condition.get(col, 0.0)
+                    if val < low or val > high:
+                        warnings.append(f"Atmosphere '{col}'={val} is outside training distribution range [{low}, {high}].")
             else:
                 from departments.blast_furnace.feature_processing import _parse_atmosphere
                 atm_df = _parse_atmosphere(pd.Series([test_condition or ""]))
@@ -189,6 +210,13 @@ class Predictor:
                     "other_pct": parsed_condition.get("other_pct", 0.0),
                     "num_components": parsed_condition.get("num_components", 0)
                 }])
+                # Check burden ranges
+                for col in ["sinter_pct", "ore_pct", "pellet_pct", "other_pct", "num_components"]:
+                    if col in BURDEN_RANGES:
+                        val = parsed_condition.get(col, 0.0)
+                        low, high = BURDEN_RANGES[col]
+                        if val < low or val > high:
+                            warnings.append(f"Burden '{col}'={val} is outside training distribution range [{low}, {high}].")
             else:
                 from departments.blast_furnace.feature_processing import _encode_burden_numeric
                 burden_df = _encode_burden_numeric(pd.Series([burden or ""]))
@@ -240,7 +268,7 @@ class Predictor:
         row = np.hstack(parts).astype(float)
         if not np.isfinite(row).all():
             raise PredictionInputError("Feature construction produced non-finite values")
-        return row
+        return row, warnings
 
     # ── Public predict ────────────────────────────────────────────────────
     def predict(
@@ -264,9 +292,9 @@ class Predictor:
 
         Returns
         -------
-        dict  : {"Ts": float, "Tm": float, "Tm-Ts": float}
+        dict  : {"Ts": float, "Tm": float, "Tm-Ts": float, "confidence": str, "distance": float, "warnings": list, "inputs": dict}
         """
-        row = self._build_row(chemistry, test_condition, burden, test_type, parsed_condition)
+        row, warnings = self._build_row(chemistry, test_condition, burden, test_type, parsed_condition)
         self.last_feature_vector = row[0].tolist()
         predictions = {}
         for target in self.targets:
@@ -290,6 +318,13 @@ class Predictor:
 
         predictions["confidence"] = confidence
         predictions["distance"] = round(dist, 3) if dist is not None else None
+        predictions["warnings"] = warnings
+        predictions["inputs"] = {
+            "chemistry": chemistry,
+            "test_condition": test_condition,
+            "burden": burden,
+            "test_type": test_type,
+        }
         return predictions
 
     def predict_batch(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -299,21 +334,25 @@ class Predictor:
                           Basicity, Test Condition, Burden compositon, Test Type
         """
         rows = []
+        all_warnings = []
         for _, row in df.iterrows():
             chem = {c: row.get(c, 0.0) for c in CHEM_COLS}
-            feat_row = self._build_row(
+            feat_row, warnings = self._build_row(
                 chemistry=chem,
                 test_condition=row.get("Test Condition"),
                 burden=row.get("Burden compositon"),
                 test_type=row.get("Test Type"),
             )
             rows.append(feat_row)
+            all_warnings.append(warnings)
         X = np.vstack(rows)
 
         result = {}
         for target in self.targets:
             result[target] = self._models[target].predict(X).round(1)
-        return pd.DataFrame(result)
+        result_df = pd.DataFrame(result)
+        result_df["warnings"] = all_warnings
+        return result_df
 
 
 # ── Quick test ────────────────────────────────────────────────────────────

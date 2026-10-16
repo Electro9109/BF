@@ -61,6 +61,7 @@ from parse.ingestion_workflow import (
 from pipeline.rag_pipeline import answer_question_structured, build_engine, load_model
 from ml.unified_calculator import UnifiedCalculator, DepartmentPredictionResult
 from parse.translator_pipeline import ResultsTranslator
+from parse.structured_query import StructuredQueryEngine, query_dataset
 
 MODEL_PATH = LLM_MODEL_DIR
 TOP_N = TOP_K
@@ -333,8 +334,8 @@ def docs_fingerprint(docs_dir):
     if not p.exists():
         return ""
     items = sorted(
-        (f.name, f.stat().st_size, f.stat().st_mtime)
-        for f in p.glob("*.txt")
+        (str(f.relative_to(p)), f.stat().st_size, f.stat().st_mtime)
+        for f in p.rglob("*.txt")
     )
     return hashlib.md5(str(items).encode()).hexdigest()[:8]
 
@@ -663,8 +664,8 @@ st.markdown("## P.A.R.S.E")
 st.caption("Process · Analysis · Retrieval · Synthesis · Evaluation — Fully offline metallurgical assistant.")
 st.divider()
 
-tab_rag, tab_pred, tab_ingestion = st.tabs(
-    ["🔍 RAG Chat", "🧮 Predictor", "📥 Data Ingestion"]
+tab_rag, tab_pred, tab_query, tab_ingestion = st.tabs(
+    ["🔍 RAG Chat", "🧮 Predictor", "📊 Data Query", "📥 Data Ingestion"]
 )
 
 
@@ -1259,7 +1260,132 @@ with tab_pred:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — DATA INGESTION
+# TAB 3 — DATA QUERY (Structured Query Engine)
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab_query:
+    st.markdown('<div class="section-header">Structured Data Query</div>', unsafe_allow_html=True)
+    st.caption(
+        "Query registered datasets with safe, constrained operations. "
+        "Compute statistics, filter records, and aggregate values from the underlying data."
+    )
+    
+    # Dataset selection
+    dataset_options = {
+        "Blast Furnace (Experimental Data)": "blast_furnace",
+        "Sintering (Productivity Data)": "sinter_productivity",
+        "Energy (Steel Industry Data)": "steel_energy",
+    }
+    selected_display = st.selectbox("Select Dataset", list(dataset_options.keys()))
+    dataset_id = dataset_options[selected_display]
+    
+    # Operation selection
+    operation_options = {
+        "Get Columns": "get_columns",
+        "Get Statistics": "get_statistics",
+        "Filter Rows": "filter_rows",
+        "Aggregate": "aggregate",
+        "Get Top Rows": "get_top_rows",
+    }
+    selected_op_display = st.selectbox("Select Operation", list(operation_options.keys()))
+    operation = operation_options[selected_op_display]
+    
+    # Dynamic parameters based on operation
+    params = {}
+    
+    if operation == "get_statistics":
+        col_options = ["Overall dataset statistics"]  # Will be populated dynamically
+        params["column"] = st.selectbox("Column (optional)", col_options)
+        if params["column"] == "Overall dataset statistics":
+            params["column"] = None
+    
+    elif operation == "filter_rows":
+        engine = StructuredQueryEngine()
+        col_result = engine.get_columns(dataset_id)
+        if col_result.success:
+            columns = list(col_result.data.keys())
+            params["column"] = st.selectbox("Filter Column", columns)
+            params["operator"] = st.selectbox(
+                "Operator",
+                ["eq (equal)", "ne (not equal)", "gt (greater than)", "lt (less than)", "ge (>=)", "le (<=)", "in (in list)"]
+            )
+            op_map = {
+                "eq (equal)": "eq",
+                "ne (not equal)": "ne",
+                "gt (greater than)": "gt",
+                "lt (less than)": "lt",
+                "ge (>=)": "ge",
+                "le (<=)": "le",
+                "in (in list)": "in",
+            }
+            params["operator"] = op_map[params["operator"]]
+            
+            if params["operator"] == "in":
+                params["value"] = st.text_input("Value (comma-separated list)")
+            else:
+                params["value"] = st.text_input("Value")
+    
+    elif operation == "aggregate":
+        engine = StructuredQueryEngine()
+        col_result = engine.get_columns(dataset_id)
+        if col_result.success:
+            columns = list(col_result.data.keys())
+            params["group_by"] = st.selectbox("Group By (optional)", ["None"] + columns)
+            if params["group_by"] == "None":
+                params["group_by"] = None
+            params["agg_column"] = st.selectbox("Aggregate Column (optional)", ["None"] + columns)
+            if params["agg_column"] == "None":
+                params["agg_column"] = None
+            params["agg_func"] = st.selectbox("Aggregate Function", ["mean", "sum", "count"])
+    
+    elif operation == "get_top_rows":
+        engine = StructuredQueryEngine()
+        col_result = engine.get_columns(dataset_id)
+        if col_result.success:
+            columns = list(col_result.data.keys())
+            params["column"] = st.selectbox("Sort Column", columns)
+            params["n"] = st.number_input("Number of rows", min_value=1, max_value=100, value=5)
+            params["ascending"] = st.checkbox("Ascending order", value=False)
+    
+    # Execute query
+    if st.button("🚀 Execute Query", key="btn_execute_query"):
+        with st.spinner("Executing query..."):
+            try:
+                result = query_dataset(dataset_id, operation, **params)
+                
+                if result.success:
+                    st.success(f"Query succeeded: {result.operation} on {result.dataset_id}")
+                    st.caption(f"Rows returned: {result.row_count}")
+                    
+                    # Display metadata
+                    if result.metadata:
+                        with st.expander("Query Metadata"):
+                            st.json(result.metadata)
+                    
+                    # Display result
+                    if isinstance(result.data, pd.DataFrame):
+                        st.dataframe(result.data)
+                        
+                        # Download button
+                        csv_data = result.data.to_csv(index=False).encode("utf-8")
+                        st.download_button(
+                            "📥 Download Result (CSV)",
+                            data=csv_data,
+                            file_name=f"query_result_{dataset_id}_{operation}.csv",
+                            mime="text/csv",
+                        )
+                    elif isinstance(result.data, dict):
+                        st.json(result.data)
+                    else:
+                        st.info("No data returned")
+                else:
+                    st.error(f"Query failed: {result.error}")
+            except Exception as e:
+                st.error(f"Error executing query: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — DATA INGESTION
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_ingestion:

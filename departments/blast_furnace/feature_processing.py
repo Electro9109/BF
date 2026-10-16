@@ -40,15 +40,18 @@ CONDITION_COL = "Test Condition"
 BURDEN_COL = "Burden compositon"
 TEST_TYPE_COL = None   # derived from the unnamed second column (SO/SOP/P)
 
-# ── Domain-knowledge practical ranges (fixed, not data-derived) ────────────
+# ── Domain-knowledge practical ranges (adjusted to cover observed data)
+# Note: These are operating ranges covering the experimental dataset while
+# remaining realistic for blast furnace operation. They are not strict
+# physical limits but trigger warnings for inputs outside the observed training distribution.
 CHEM_RANGES = {
-    "T Fe %":   (45, 65),
-    "FeO %":    (5, 25),
-    "SiO2 %":   (3, 10),
-    "CaO %":    (5, 15),
-    "Al2O3 %":  (1, 5),
-    "MgO%":     (0.5, 3),
-    "Basicity": (0.8, 1.6),
+    "T Fe %":   (40, 70),  # Observed: 43.1-68.6, widened slightly
+    "FeO %":    (0, 15),   # Observed: 0.0-13.7, includes zero (valid experiments)
+    "SiO2 %":   (1, 18),   # Observed: 1.2-16.8, widened to cover outliers
+    "CaO %":    (0, 10),   # Observed: 0.0-7.6, includes zero (valid experiments)
+    "Al2O3 %":  (0.5, 8),  # Observed: 0.5-7.6, widened to cover outliers
+    "MgO%":     (0, 6),    # Observed: 0.0-5.1, includes zero (valid experiments)
+    "Basicity": (0.5, 3),   # Observed: 0.01-2.7, widened to cover full range
 }
 
 ATM_RANGES = {

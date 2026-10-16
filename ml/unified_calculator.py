@@ -137,6 +137,7 @@ class UnifiedCalculator:
             limitations=[
                 "Predictions valid for standard blast furnace slag and burden compositions.",
                 "Estimated using multi-model ensemble (CatBoost/RandomForest).",
+                "Range warnings indicate inputs outside training distribution; predictions may be less reliable.",
             ],
             confidence=res.get("confidence", "medium"),
         )

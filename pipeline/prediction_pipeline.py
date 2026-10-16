@@ -178,6 +178,8 @@ class PredictionPipeline:
 
         summary = self._build_summary(predictions, inputs, similar)
         parser_warnings = parsed_condition.get("warnings", []) if parsed_condition else []
+        predictor_warnings = predictions.get("warnings", [])
+        all_warnings = parser_warnings + predictor_warnings
 
         return PredictionResult(
             predictions=predictions,
@@ -185,7 +187,7 @@ class PredictionPipeline:
             feature_vector=self.predictor.last_feature_vector,
             similar_experiments=similar,
             summary=summary,
-            parser_warnings=parser_warnings,
+            parser_warnings=all_warnings,
         )
 
     def _build_summary(
