@@ -59,6 +59,8 @@ from parse.ingestion_workflow import (
     set_staged_upload,
 )
 from pipeline.rag_pipeline import answer_question_structured, build_engine, load_model
+from ml.unified_calculator import UnifiedCalculator, DepartmentPredictionResult
+from parse.translator_pipeline import ResultsTranslator
 
 MODEL_PATH = LLM_MODEL_DIR
 TOP_N = TOP_K
@@ -350,6 +352,8 @@ def init_session():
         "loaded_fingerprint": None,
         "pred_results":       None,
         "pred_history":       [],   # list of recent prediction dicts
+        "pred_structured_result": None,
+        "pred_translation":   None,
         "eda_result":         None,
         "eda_frame":          None,
         "analysis_bundle":    None,
@@ -587,8 +591,10 @@ with st.sidebar:
     ml_ok = False
     try:
         predictor_default = cached_load_prediction_pipeline(ML_MODEL_DIR, "best")
+        unified_calc = UnifiedCalculator(ML_MODEL_DIR)
+        avail_tasks = unified_calc.get_available_tasks()
         ml_ok = True
-        st.success("ML models ready")
+        st.success(f"ML models ready ({len(avail_tasks)} tasks available)")
     except Exception as exc:
         st.warning(f"ML models not loaded: {exc}")
 
@@ -770,6 +776,17 @@ with tab_pred:
             f"`{ML_MODEL_DIR}` (run `python ml/train.py` first)."
         )
     else:
+        unified_calc = UnifiedCalculator(ML_MODEL_DIR)
+        avail_tasks = unified_calc.get_available_tasks()
+
+        # Task selection
+        task_choice = st.selectbox(
+            "Operational Task / Department",
+            options=avail_tasks,
+            index=0,
+            help="Select verified production ML model to execute.",
+        )
+
         # ── Two-column layout ─────────────────────────────────────────────
         col_input, col_spacer, col_result = st.columns([4, 0.5, 5.5])
 
@@ -778,48 +795,81 @@ with tab_pred:
                         unsafe_allow_html=True)
 
             with st.form("predictor_form", clear_on_submit=False):
-                # ── Chemistry ─────────────────────────────────────────
-                st.markdown("**Chemistry**")
-                chem_c1, chem_c2 = st.columns(2)
-                with chem_c1:
-                    tfe   = st.number_input("T Fe %",   value=57.62, format="%.2f", step=0.1)
-                    feo   = st.number_input("FeO %",    value=6.65,  format="%.2f", step=0.1)
-                    sio2  = st.number_input("SiO₂ %",   value=4.23,  format="%.2f", step=0.1)
-                    cao   = st.number_input("CaO %",    value=6.93,  format="%.2f", step=0.1)
-                with chem_c2:
-                    al2o3 = st.number_input("Al₂O₃ %",  value=2.51,  format="%.2f", step=0.1)
-                    mgo   = st.number_input("MgO %",    value=1.89,  format="%.2f", step=0.1)
-                    basicity = st.number_input("Basicity (CaO/SiO₂)", value=1.638, format="%.3f", step=0.01)
+                # TASK 1: BLAST FURNACE
+                if "Blast Furnace" in task_choice:
+                    st.markdown("**Chemistry**")
+                    chem_c1, chem_c2 = st.columns(2)
+                    with chem_c1:
+                        tfe   = st.number_input("T Fe %",   value=57.62, format="%.2f", step=0.1)
+                        feo   = st.number_input("FeO %",    value=6.65,  format="%.2f", step=0.1)
+                        sio2  = st.number_input("SiO₂ %",   value=4.23,  format="%.2f", step=0.1)
+                        cao   = st.number_input("CaO %",    value=6.93,  format="%.2f", step=0.1)
+                    with chem_c2:
+                        al2o3 = st.number_input("Al₂O₃ %",  value=2.51,  format="%.2f", step=0.1)
+                        mgo   = st.number_input("MgO %",    value=1.89,  format="%.2f", step=0.1)
+                        basicity = st.number_input("Basicity (CaO/SiO₂)", value=1.638, format="%.3f", step=0.01)
 
-                st.markdown("---")
-                st.markdown("**Gas Atmosphere & Burden Mix**")
-                
-                input_mode = st.radio("Condition Input Mode", ["Describe in plain English", "Manual Strings"], index=0)
-                
-                cond_text = ""
-                test_condition = ""
-                burden = ""
-                test_type = "SO"
-                
-                if input_mode == "Describe in plain English":
-                    cond_text = st.text_area(
-                        "Describe conditions",
-                        placeholder="e.g. CO=40%, H2=8%, N2=52%. Burden composition is 70% Sinter and 30% Ore.",
-                        value="CO=40%, N2=60%. Burden is 100% sinter."
+                    st.markdown("---")
+                    st.markdown("**Gas Atmosphere & Burden Mix**")
+                    input_mode = st.radio("Condition Input Mode", ["Describe in plain English", "Manual Strings"], index=0)
+                    cond_text = ""
+                    test_condition = ""
+                    burden = ""
+                    test_type = "SO"
+
+                    if input_mode == "Describe in plain English":
+                        cond_text = st.text_area(
+                            "Describe conditions",
+                            placeholder="e.g. CO=40%, H2=8%, N2=52%. Burden composition is 70% Sinter and 30% Ore.",
+                            value="CO=40%, N2=60%. Burden is 100% sinter."
+                        )
+                    else:
+                        test_condition = st.text_input("Atmosphere String", value="CO= 40% & N2=60%")
+                        burden = st.text_input("Burden String", value="S1-70%+O1-30%")
+                        test_type = st.selectbox("Test Type", ["SO", "SOP", "P"], index=0)
+
+                    st.markdown("---")
+                    model_choice = st.selectbox(
+                        "Model",
+                        options=["Best (auto)", "CatBoost", "RandomForest", "XGBoost"],
+                        index=0,
+                        help="'Best' auto-selects the model with lowest RMSE per target",
                     )
-                else:
-                    test_condition = st.text_input("Atmosphere String", value="CO= 40% & N2=60%")
-                    burden = st.text_input("Burden String", value="S1-70%+O1-30%")
-                    test_type = st.selectbox("Test Type", ["SO", "SOP", "P"], index=0)
 
-                st.markdown("---")
+                # TASK 2: SINTER PLANT (PROSPECTIVE PRODUCTIVITY)
+                elif "Sinter Plant" in task_choice:
+                    st.caption("Prospective raw mix chemistry and crushing granulometry (pre-process inputs).")
+                    sc1, sc2 = st.columns(2)
+                    with sc1:
+                        s_fe = st.number_input("I/O Fines Total Fe %", value=60.10, format="%.2f", step=0.1)
+                        s_sio2 = st.number_input("I/O Fines SiO2 %", value=4.50, format="%.2f", step=0.1)
+                        s_al2o3 = st.number_input("I/O Fines Al2O3 %", value=2.80, format="%.2f", step=0.1)
+                        s_cao = st.number_input("I/O Fines CaO %", value=0.60, format="%.2f", step=0.05)
+                    with sc2:
+                        s_flux_cao = st.number_input("Flux CaO %", value=36.00, format="%.2f", step=0.5)
+                        s_flux_mgo = st.number_input("Flux MgO %", value=8.50, format="%.2f", step=0.5)
+                        s_flux_crush = st.number_input("Flux Crushing Index", value=82.00, format="%.2f", step=1.0)
+                        s_coke_crush = st.number_input("Coke Crushing Index", value=78.00, format="%.2f", step=1.0)
 
-                model_choice = st.selectbox(
-                    "Model",
-                    options=["Best (auto)", "CatBoost", "RandomForest", "XGBoost"],
-                    index=0,
-                    help="'Best' auto-selects the model with lowest RMSE per target",
-                )
+                # TASK 3: STEEL ENERGY
+                elif "Steel Energy" in task_choice:
+                    st.caption("Contemporaneous 15-minute electrical load parameters.")
+                    ec1, ec2 = st.columns(2)
+                    with ec1:
+                        e_lag_kvarh = st.number_input("Lagging Reactive Power (kVarh)", value=12.50, format="%.2f", step=0.5)
+                        e_lead_kvarh = st.number_input("Leading Reactive Power (kVarh)", value=0.00, format="%.2f", step=0.1)
+                        e_nsm = st.number_input("Seconds from Midnight (NSM)", value=32400.0, format="%.0f", step=900.0)
+                    with ec2:
+                        e_lag_pf = st.number_input("Lagging Power Factor (%)", value=88.50, format="%.2f", step=1.0)
+                        e_lead_pf = st.number_input("Leading Power Factor (%)", value=100.00, format="%.2f", step=1.0)
+                    
+                    ec3, ec4, ec5 = st.columns(3)
+                    with ec3:
+                        e_status = st.selectbox("Week Status", ["Weekday", "Weekend"])
+                    with ec4:
+                        e_day = st.selectbox("Day of Week", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+                    with ec5:
+                        e_load = st.selectbox("Load Type", ["Light_Load", "Medium_Load", "Maximum_Load"], index=1)
 
                 st.markdown("")
                 submitted = st.form_submit_button(
@@ -829,74 +879,131 @@ with tab_pred:
                 )
 
             if submitted:
-                # Map UI choice to Predictor model_type
-                model_type_map = {
-                    "Best (auto)":   "best",
-                    "CatBoost":      "CatBoost",
-                    "RandomForest":  "RandomForest",
-                    "XGBoost":       "XGBoost",
-                }
-                chosen_type = model_type_map[model_choice]
-
-                chemistry = {
-                    "T Fe %":  tfe,
-                    "FeO %":   feo,
-                    "SiO2 %":  sio2,
-                    "CaO %":   cao,
-                    "Al2O3 %": al2o3,
-                    "MgO%":    mgo,
-                    "Basicity": basicity,
-                }
-
                 try:
-                    # Initialize PredictionPipeline with the chosen type
-                    pipe = cached_load_prediction_pipeline(ML_MODEL_DIR, chosen_type)
-                    
-                    # Run the pipeline, passing model/tokenizer if LLM parsing is needed
-                    result_obj = pipe.run(
-                        chemistry=chemistry,
-                        test_condition=test_condition if input_mode == "Manual Strings" else None,
-                        burden=burden if input_mode == "Manual Strings" else None,
-                        test_type=test_type if input_mode == "Manual Strings" else None,
-                        condition_text=cond_text if input_mode == "Describe in plain English" else None,
-                        tokenizer=model_tokenizer if input_mode == "Describe in plain English" else None,
-                        model=model_core if input_mode == "Describe in plain English" else None,
-                    )
-                    
-                    st.session_state.pred_results = {
-                        "predictions":     result_obj.predictions,
-                        "chemistry":       chemistry,
-                        "model":           model_choice,
-                        "inputs":          result_obj.inputs,
-                        "parser_warnings": result_obj.parser_warnings,
-                    }
-                    # Append to rolling history (keep last 10)
-                    import time as _time
-                    hist_entry = {
-                        "ts_val":   result_obj.predictions.get("Ts"),
-                        "tm_val":   result_obj.predictions.get("Tm"),
-                        "tmt_val":  result_obj.predictions.get("Tm-Ts"),
-                        "conf":     result_obj.predictions.get("confidence", "?"),
-                        "dist":     result_obj.predictions.get("distance", 999.0),
-                        "model":    model_choice,
-                        "burden":   result_obj.inputs.get("burden") or "N/A",
-                        "cond":     result_obj.inputs.get("test_condition") or "N/A",
-                        "ts_stamp": _time.strftime("%H:%M:%S"),
-                    }
-                    hist = st.session_state.pred_history
-                    hist.insert(0, hist_entry)
-                    st.session_state.pred_history = hist[:10]
+                    if "Blast Furnace" in task_choice:
+                        model_type_map = {
+                            "Best (auto)":   "best",
+                            "CatBoost":      "CatBoost",
+                            "RandomForest":  "RandomForest",
+                            "XGBoost":       "XGBoost",
+                        }
+                        chosen_type = model_type_map[model_choice]
+                        chemistry = {
+                            "T Fe %":  tfe,
+                            "FeO %":   feo,
+                            "SiO2 %":  sio2,
+                            "CaO %":   cao,
+                            "Al2O3 %": al2o3,
+                            "MgO%":    mgo,
+                            "Basicity": basicity,
+                        }
+                        pipe = cached_load_prediction_pipeline(ML_MODEL_DIR, chosen_type)
+                        result_obj = pipe.run(
+                            chemistry=chemistry,
+                            test_condition=test_condition if input_mode == "Manual Strings" else None,
+                            burden=burden if input_mode == "Manual Strings" else None,
+                            test_type=test_type if input_mode == "Manual Strings" else None,
+                            condition_text=cond_text if input_mode == "Describe in plain English" else None,
+                            tokenizer=model_tokenizer if input_mode == "Describe in plain English" else None,
+                            model=model_core if input_mode == "Describe in plain English" else None,
+                        )
+
+                        dept_res = DepartmentPredictionResult(
+                            department="blast_furnace",
+                            target="Ts / Tm / Tm-Ts",
+                            predicted_value=result_obj.predictions,
+                            units="°C",
+                            model_name=model_choice,
+                            inputs=chemistry,
+                            evaluation_metrics={"model": model_choice},
+                            warnings=result_obj.parser_warnings,
+                            limitations=[
+                                "Predictions valid for typical blast furnace softening and melting ranges.",
+                                "Extrapolations flagged via nearest-neighbor distance.",
+                            ],
+                            confidence=result_obj.predictions.get("confidence", "medium"),
+                        )
+
+                        st.session_state.pred_results = {
+                            "task_type":       "blast_furnace",
+                            "predictions":     result_obj.predictions,
+                            "chemistry":       chemistry,
+                            "model":           model_choice,
+                            "inputs":          result_obj.inputs,
+                            "parser_warnings": result_obj.parser_warnings,
+                            "dept_res":        dept_res,
+                        }
+                        st.session_state.pred_structured_result = dept_res.to_structured_result()
+                        st.session_state.pred_translation = None
+
+                        # Rolling history
+                        import time as _time
+                        hist_entry = {
+                            "ts_val":   result_obj.predictions.get("Ts"),
+                            "tm_val":   result_obj.predictions.get("Tm"),
+                            "tmt_val":  result_obj.predictions.get("Tm-Ts"),
+                            "conf":     result_obj.predictions.get("confidence", "?"),
+                            "dist":     result_obj.predictions.get("distance", 999.0),
+                            "model":    model_choice,
+                            "burden":   result_obj.inputs.get("burden") or "N/A",
+                            "cond":     result_obj.inputs.get("test_condition") or "N/A",
+                            "ts_stamp": _time.strftime("%H:%M:%S"),
+                        }
+                        hist = st.session_state.pred_history
+                        hist.insert(0, hist_entry)
+                        st.session_state.pred_history = hist[:10]
+
+                    elif "Sinter Plant" in task_choice:
+                        sinter_inputs = {
+                            "I/O Fines Total Fe %": s_fe,
+                            "I/O Fines SiO2 %": s_sio2,
+                            "I/O Fines Al2O3 %": s_al2o3,
+                            "I/O Fines CaO %": s_cao,
+                            "Flux CaO %": s_flux_cao,
+                            "Flux MgO %": s_flux_mgo,
+                            "Flux Crushing Index": s_flux_crush,
+                            "Coke Crushing Index": s_coke_crush,
+                        }
+                        dept_res = unified_calc.predict_sinter_productivity(sinter_inputs)
+                        st.session_state.pred_results = {
+                            "task_type": "sintering",
+                            "dept_res":  dept_res,
+                        }
+                        st.session_state.pred_structured_result = dept_res.to_structured_result()
+                        st.session_state.pred_translation = None
+
+                    elif "Steel Energy" in task_choice:
+                        numeric_inputs = {
+                            "Lagging_Current_Reactive.Power_kVarh": e_lag_kvarh,
+                            "Leading_Current_Reactive_Power_kVarh": e_lead_kvarh,
+                            "Lagging_Current_Power_Factor": e_lag_pf,
+                            "Leading_Current_Power_Factor": e_lead_pf,
+                            "NSM": e_nsm,
+                        }
+                        calendar_inputs = {
+                            "WeekStatus": e_status,
+                            "Day_of_week": e_day,
+                            "Load_Type": e_load,
+                        }
+                        dept_res = unified_calc.predict_energy_consumption(numeric_inputs, calendar_inputs)
+                        st.session_state.pred_results = {
+                            "task_type": "energy",
+                            "dept_res":  dept_res,
+                        }
+                        st.session_state.pred_structured_result = dept_res.to_structured_result()
+                        st.session_state.pred_translation = None
 
                 except Exception as exc:
                     st.error(f"Prediction failed: {exc}")
                     st.session_state.pred_results = None
+                    st.session_state.pred_structured_result = None
+                    st.session_state.pred_translation = None
 
         # ── Results column ────────────────────────────────────────────────
         with col_result:
             pr = st.session_state.pred_results
 
             if pr is None:
-                # Empty state
                 st.markdown("")
                 st.markdown("")
                 st.markdown(
@@ -904,158 +1011,168 @@ with tab_pred:
                     "color: var(--text-tertiary);'>"
                     "<p style='font-size: 3rem; margin-bottom: 12px;'>🧪</p>"
                     "<p style='font-size: 1.1rem; font-weight: 500;'>"
-                    "Enter chemistry parameters and click Predict</p>"
+                    "Select task, enter parameters, and click Predict</p>"
                     "<p style='font-size: 0.85rem; margin-top: 8px;'>"
-                    "The model will estimate softening temperature (Ts), "
-                    "melting temperature (Tm), and the melting interval (Tm−Ts).</p>"
+                    "Calculates verified domain predictions and grounds explanations through the Results Translator.</p>"
                     "</div>",
                     unsafe_allow_html=True,
                 )
             else:
-                preds = pr["predictions"]
-                ts_val  = preds.get("Ts",    None)
-                tm_val  = preds.get("Tm",    None)
-                tmt_val = preds.get("Tm-Ts", None)
+                task_type = pr.get("task_type", "blast_furnace")
 
-                st.markdown('<div class="section-header">Prediction Results</div>',
-                            unsafe_allow_html=True)
-                st.caption(f"Model: **{pr['model']}**")
+                if task_type == "blast_furnace":
+                    preds = pr["predictions"]
+                    ts_val  = preds.get("Ts",    None)
+                    tm_val  = preds.get("Tm",    None)
+                    tmt_val = preds.get("Tm-Ts", None)
 
-                # ── Metric cards ──────────────────────────────────────
-                mc1, mc2, mc3 = st.columns(3)
-                with mc1:
+                    st.markdown('<div class="section-header">Prediction Results — Blast Furnace</div>',
+                                unsafe_allow_html=True)
+                    st.caption(f"Model: **{pr['model']}**")
+
+                    mc1, mc2, mc3 = st.columns(3)
+                    with mc1:
+                        st.markdown(
+                            f'<div class="pred-card ts">'
+                            f'<div class="pred-label">Softening Temp (Ts)</div>'
+                            f'<div class="pred-value">{ts_val}<span class="pred-unit">°C</span></div>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+                    with mc2:
+                        st.markdown(
+                            f'<div class="pred-card tm">'
+                            f'<div class="pred-label">Melting Temp (Tm)</div>'
+                            f'<div class="pred-value">{tm_val}<span class="pred-unit">°C</span></div>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+                    with mc3:
+                        st.markdown(
+                            f'<div class="pred-card tmts">'
+                            f'<div class="pred-label">Melting Interval (Tm−Ts)</div>'
+                            f'<div class="pred-value">{tmt_val}<span class="pred-unit">°C</span></div>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+
+                    if ts_val is not None and tm_val is not None and tmt_val is not None:
+                        computed_diff = round(tm_val - ts_val, 1)
+                        delta = abs(computed_diff - tmt_val)
+                        st.markdown("")
+                        if delta <= 15:
+                            st.markdown(
+                                f'<div style="text-align:center">'
+                                f'<span class="consistency-badge good">'
+                                f'✓ Consistent — Tm − Ts = {computed_diff}°C '
+                                f'(predicted Tm-Ts = {tmt_val}°C, Δ = {delta}°C)'
+                                f'</span></div>',
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.markdown(
+                                f'<div style="text-align:center">'
+                                f'<span class="consistency-badge warn">'
+                                f'⚠ Mismatch — Tm − Ts = {computed_diff}°C '
+                                f'but predicted Tm-Ts = {tmt_val}°C (Δ = {delta}°C)'
+                                f'</span></div>',
+                                unsafe_allow_html=True,
+                            )
+
+                    confidence = preds.get("confidence", "medium")
+                    nn_dist    = preds.get("distance", 999.0)
+                    conf_icons  = {"high": "🟢", "medium": "🟡", "low": "🔴"}
+                    conf_labels = {
+                        "high":   "High confidence",
+                        "medium": "Medium confidence",
+                        "low":    "Low confidence — extrapolation risk",
+                    }
+                    st.markdown("")
                     st.markdown(
-                        f'<div class="pred-card ts">'
-                        f'<div class="pred-label">Softening Temp (Ts)</div>'
-                        f'<div class="pred-value">{ts_val}<span class="pred-unit">°C</span></div>'
-                        f'</div>',
+                        f'<div style="text-align:center">'
+                        f'<span class="conf-badge {confidence}">'
+                        f'{conf_icons.get(confidence, "")} '
+                        f'{conf_labels.get(confidence, confidence)}'
+                        f'&nbsp;·&nbsp; NN dist = {nn_dist}'
+                        f'</span></div>',
                         unsafe_allow_html=True,
                     )
-                with mc2:
-                    st.markdown(
-                        f'<div class="pred-card tm">'
-                        f'<div class="pred-label">Melting Temp (Tm)</div>'
-                        f'<div class="pred-value">{tm_val}<span class="pred-unit">°C</span></div>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-                with mc3:
+
+                    parser_warnings = pr.get("parser_warnings", [])
+                    if parser_warnings:
+                        st.markdown("")
+                        st.markdown('<div class="section-header">Parser Warnings</div>', unsafe_allow_html=True)
+                        for w in parser_warnings:
+                            st.markdown(f'<div class="warn-chip">⚠ {w}</div>', unsafe_allow_html=True)
+
+                elif task_type == "sintering":
+                    dept_res: DepartmentPredictionResult = pr["dept_res"]
+                    st.markdown('<div class="section-header">Prediction Results — Sinter Plant</div>', unsafe_allow_html=True)
+                    st.caption(f"Model: **{dept_res.model_name}** | Target: **{dept_res.target}**")
+
                     st.markdown(
                         f'<div class="pred-card tmts">'
-                        f'<div class="pred-label">Melting Interval (Tm−Ts)</div>'
-                        f'<div class="pred-value">{tmt_val}<span class="pred-unit">°C</span></div>'
+                        f'<div class="pred-label">Prospective Sinter Productivity</div>'
+                        f'<div class="pred-value">{dept_res.predicted_value}<span class="pred-unit"> {dept_res.units}</span></div>'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
 
-                # ── Consistency check ─────────────────────────────────
-                if ts_val is not None and tm_val is not None and tmt_val is not None:
-                    computed_diff = round(tm_val - ts_val, 1)
-                    delta = abs(computed_diff - tmt_val)
+                    if dept_res.evaluation_metrics:
+                        m = dept_res.evaluation_metrics
+                        st.caption(f"Cross-Validation (5-Fold): MAE={m.get('mae')} | RMSE={m.get('rmse')} | R²={m.get('r2')}")
 
-                    st.markdown("")
-                    if delta <= 15:
-                        st.markdown(
-                            f'<div style="text-align:center">'
-                            f'<span class="consistency-badge good">'
-                            f'✓ Consistent — Tm − Ts = {computed_diff}°C '
-                            f'(predicted Tm-Ts = {tmt_val}°C, Δ = {delta}°C)'
-                            f'</span></div>',
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        st.markdown(
-                            f'<div style="text-align:center">'
-                            f'<span class="consistency-badge warn">'
-                            f'⚠ Mismatch — Tm − Ts = {computed_diff}°C '
-                            f'but predicted Tm-Ts = {tmt_val}°C (Δ = {delta}°C)'
-                            f'</span></div>',
-                            unsafe_allow_html=True,
-                        )
+                    if dept_res.warnings:
+                        st.markdown("")
+                        for w in dept_res.warnings:
+                            st.markdown(f'<div class="warn-chip">⚠ {w}</div>', unsafe_allow_html=True)
 
-                # ── Confidence badge ──────────────────────────────────
-                confidence = preds.get("confidence", "medium")
-                nn_dist    = preds.get("distance", 999.0)
-                conf_icons  = {"high": "🟢", "medium": "🟡", "low": "🔴"}
-                conf_labels = {
-                    "high":   "High confidence",
-                    "medium": "Medium confidence",
-                    "low":    "Low confidence — extrapolation risk",
-                }
-                st.markdown("")
-                st.markdown(
-                    f'<div style="text-align:center">'
-                    f'<span class="conf-badge {confidence}">'
-                    f'{conf_icons.get(confidence, "")} '
-                    f'{conf_labels.get(confidence, confidence)}'
-                    f'&nbsp;·&nbsp; NN dist = {nn_dist}'
-                    f'</span></div>',
-                    unsafe_allow_html=True,
-                )
+                elif task_type == "energy":
+                    dept_res: DepartmentPredictionResult = pr["dept_res"]
+                    st.markdown('<div class="section-header">Prediction Results — Steel Energy</div>', unsafe_allow_html=True)
+                    st.caption(f"Model: **{dept_res.model_name}** | Target: **{dept_res.target}**")
 
-                # ── Parser warnings ───────────────────────────────────
-                parser_warnings = pr.get("parser_warnings", [])
-                if parser_warnings:
-                    st.markdown("")
                     st.markdown(
-                        '<div class="section-header">Parser Warnings</div>',
+                        f'<div class="pred-card tm">'
+                        f'<div class="pred-label">Active Power Consumption</div>'
+                        f'<div class="pred-value">{dept_res.predicted_value}<span class="pred-unit"> {dept_res.units}</span></div>'
+                        f'</div>',
                         unsafe_allow_html=True,
                     )
-                    for w in parser_warnings:
-                        st.markdown(
-                            f'<div class="warn-chip">⚠ {w}</div>',
-                            unsafe_allow_html=True,
-                        )
 
-                # ── Parsed condition preview (NL mode) ────────────────
-                parsed = pr["inputs"].get("parsed_condition")
-                if parsed:
-                    with st.expander("🔍 Parsed Condition Detail", expanded=False):
-                        a1, a2, a3 = st.columns(3)
-                        a1.metric("CO %",  f"{parsed.get('CO_pct', 0):.1f}")
-                        a2.metric("H₂ %",  f"{parsed.get('H2_pct', 0):.1f}")
-                        a3.metric("N₂ %",  f"{parsed.get('N2_pct', 0):.1f}")
-                        b1, b2, b3, b4 = st.columns(4)
-                        b1.metric("Sinter %", f"{parsed.get('sinter_pct', 0):.1f}")
-                        b2.metric("Ore %",    f"{parsed.get('ore_pct',    0):.1f}")
-                        b3.metric("Pellet %", f"{parsed.get('pellet_pct', 0):.1f}")
-                        b4.metric("Other %",  f"{parsed.get('other_pct',  0):.1f}")
+                    if dept_res.evaluation_metrics:
+                        m = dept_res.evaluation_metrics
+                        st.caption(f"Held-Out Chronological CV: MAE={m.get('mae')} kWh | RMSE={m.get('rmse')} kWh | R²={m.get('r2')}")
 
-                # ── Input summary ─────────────────────────────────────
-                st.markdown("")
-                st.markdown('<div class="section-header">Input Summary</div>',
-                            unsafe_allow_html=True)
+                    if dept_res.warnings:
+                        st.markdown("")
+                        for w in dept_res.warnings:
+                            st.markdown(f'<div class="warn-chip">⚠ {w}</div>', unsafe_allow_html=True)
 
-                chem = pr["chemistry"]
-                inputs = pr.get("inputs", {})
-                cond_val   = inputs.get("test_condition") or "N/A"
-                burden_val = inputs.get("burden")         or "N/A"
-                type_val   = inputs.get("test_type")      or "N/A"
+                # ── RESULTS TRANSLATOR SYNTHESIS & FIDELITY VALIDATION ────────────────
+                st.markdown("---")
+                st.markdown('<div class="section-header">PARSE Results Translator Explanation</div>', unsafe_allow_html=True)
+                
+                s_res = st.session_state.pred_structured_result
+                if s_res is not None:
+                    if st.button("💬 Explain Prediction via Results Translator", key="btn_translate_pred"):
+                        with st.spinner("Executing Results Translator and validating numerical fidelity..."):
+                            translator = ResultsTranslator()
+                            trans_out = translator.translate(s_res)
+                            st.session_state.pred_translation = trans_out
 
-                summary_lines = [
-                    f"  Model        : {pr['model']}",
-                    f"  Atmosphere   : {cond_val}",
-                    f"  Burden       : {burden_val}",
-                    f"  Test Type    : {type_val}",
-                    "",
-                    "  Chemistry:",
-                ]
-                for col_name, val in chem.items():
-                    summary_lines.append(f"    {col_name:<12}: {val}")
-
-                summary_lines += [
-                    "",
-                    "  Predictions:",
-                    f"    Ts     = {ts_val} °C",
-                    f"    Tm     = {tm_val} °C",
-                    f"    Tm-Ts  = {tmt_val} °C",
-                    f"    Conf.  = {confidence}  (NN dist = {nn_dist})",
-                ]
-
-                st.markdown(
-                    f'<div class="summary-block">{chr(10).join(summary_lines)}</div>',
-                    unsafe_allow_html=True,
-                )
+                    if st.session_state.pred_translation is not None:
+                        tout = st.session_state.pred_translation
+                        if tout.is_fallback:
+                            st.info(f"Fidelity Guard / Status: `{tout.status}`")
+                        else:
+                            st.success("✅ Explanation passed numerical and causal fidelity validation!")
+                        
+                        st.markdown(tout.text)
+                        if tout.warnings:
+                            with st.expander("Fidelity & Translation Audit Notes", expanded=False):
+                                for tw in tout.warnings:
+                                    st.write(f"- {tw}")
 
 # ── Model Performance & Benchmark Panel ─────────────────────────────────────────
 with tab_pred:

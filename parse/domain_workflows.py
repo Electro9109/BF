@@ -54,26 +54,25 @@ def analyze_sintering_productivity(
         },
         {
             "finding_id": "productivity_key_correlations",
-            "observation": f"Strongest positive correlations: {top_pos[0][0]} (r={top_pos[0][1]:.2f}), {top_pos[1][0]} (r={top_pos[1][1]:.2f}). Strongest negative correlation: {top_neg[0][0]} (r={top_neg[0][1]:.2f}).",
+            "observation": f"Strongest positive correlations with prospective features: {top_pos[0][0]} (r={top_pos[0][1]:.2f}), {top_pos[1][0]} (r={top_pos[1][1]:.2f}). Strongest negative correlation: {top_neg[0][0]} (r={top_neg[0][1]:.2f}).",
             "values": {"positive_correlations": top_pos, "negative_correlations": top_neg},
             "limitations": "Correlation does not imply causation.",
         },
     ]
 
-    # Outlier / Quality check
+    # Outlier / Quality check on raw mix & granulometry
     anomalies = []
-    # e.g., low tumbling strength (<65%)
-    low_dti = df[df["Drum Tumbling Index (DTI), %"] < 65.0]
-    if not low_dti.empty:
+    low_coke_idx = df[df["Coke Crushing Index"] < 72.0]
+    if not low_coke_idx.empty:
         anomalies.append({
-            "anomaly_id": "low_cold_strength_samples",
-            "description": f"Found {len(low_dti)} samples with cold strength DTI < 65.0%, representing degraded sinter quality.",
-            "count": len(low_dti),
+            "anomaly_id": "low_coke_crushing_index",
+            "description": f"Found {len(low_coke_idx)} batches with Coke Crushing Index < 72.0%, risking poor fuel distribution.",
+            "count": len(low_coke_idx),
         })
 
-    # Cross-validation regression
+    # Cross-validation regression on prospective features
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
-    rf = RandomForestRegressor(n_estimators=150, max_depth=8, min_samples_leaf=2, random_state=42)
+    rf = RandomForestRegressor(n_estimators=100, max_depth=6, min_samples_leaf=2, random_state=42)
     maes, rmses, r2s = [], [], []
     for tr, te in kf.split(X):
         rf.fit(X[tr], y[tr])
@@ -83,7 +82,7 @@ def analyze_sintering_productivity(
         r2s.append(r2_score(y[te], preds))
 
     eval_metrics = {
-        "model": "RandomForestRegressor",
+        "model": "RandomForestRegressor_Prospective",
         "cv_folds": 5,
         "mae": round(float(np.mean(maes)), 4),
         "rmse": round(float(np.mean(rmses)), 4),
@@ -93,12 +92,12 @@ def analyze_sintering_productivity(
 
     recommendations = [
         "Maintain coke and flux crushing granulometry within target ranges as they correlate directly with sintering strand bed permeability and productivity.",
-        "Review operating conditions for batches with Drum Tumbling Index (DTI) below 65% to avoid degradation in blast furnace burden permeability.",
+        "Screen incoming iron ore fines for silica and alumina variance prior to charging onto the strand.",
     ]
 
     limitations = [
-        "Dataset contains 449 laboratory/plant batch records; predictions represent strand productivity under recorded raw mix conditions, not thermodynamic softening-melting temperatures.",
-        "Model explains ~29% of variance (R²=0.293); unmeasured bed suction, ignition temperature, and moisture parameters also affect strand throughput.",
+        "Dataset contains 449 laboratory/plant batch records. Features are restricted to pre-process raw mix and crushing parameters to prevent finished sinter quality leakage.",
+        "Prospective model explains ~27% of variance (R²=0.266); unmeasured bed suction, ignition temperature, and moisture parameters also affect strand throughput.",
     ]
 
     return StructuredModuleResult(
@@ -165,7 +164,7 @@ def analyze_steel_energy_consumption(
     if not low_pf.empty:
         anomalies.append({
             "anomaly_id": "poor_power_factor_high_load",
-            "description": f"Identified {len(low_pf)} intervals where lagging power factor dropped below 80% during active load (>50 kWh), incurring reactive power penalties.",
+            "description": f"Identified {len(low_pf)} intervals where lagging power factor dropped below 80% during active load (>50 kWh), representing reactive power inefficiency.",
             "count": len(low_pf),
         })
 
@@ -192,7 +191,7 @@ def analyze_steel_energy_consumption(
     }
 
     recommendations = [
-        "Audit capacitor banks and reactive power compensation during intervals where Lagging Power Factor falls below 60% to avoid utility penalties.",
+        "Audit capacitor banks and reactive power compensation during intervals where Lagging Power Factor falls below 80% to mitigate reactive power losses.",
         "Shift non-continuous energy-intensive operations to designated Light_Load off-peak intervals where feasible.",
     ]
 

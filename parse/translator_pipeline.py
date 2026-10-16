@@ -164,6 +164,75 @@ class ResultsTranslator:
             if not generated_text:
                 raise ValueError("Model produced empty explanation.")
 
+            # ── Fidelity Validation Gate ─────────────────────────────────────
+            # Verify that generated text faithfully reflects the structured inputs
+            from eval.fidelity_checks import (
+                causal_language_check,
+                limitation_preserved,
+                numerical_fidelity,
+                recommendation_fidelity,
+            )
+
+            # Flatten numbers/facts from statistics, predictions, and metrics
+            combined_attributes: dict[str, Any] = {}
+            if result.statistics:
+                combined_attributes.update(result.statistics)
+            if result.predictions:
+                combined_attributes.update(result.predictions)
+            if result.evaluation_metrics:
+                combined_attributes.update(result.evaluation_metrics)
+
+            source_facts_text = result.summary
+            for f in result.findings:
+                obs = f.get("observation", str(f))
+                source_facts_text += f" {obs}"
+
+            fidelity_warnings = []
+            
+            # 1. Numerical fidelity
+            num_check = numerical_fidelity(source_facts_text, combined_attributes, generated_text)
+            if not num_check.passed:
+                fidelity_warnings.append(f"numerical_fidelity_failed: {num_check.detail}")
+
+            # 2. Causal language check
+            causal_check = causal_language_check(source_facts_text, "observation", generated_text)
+            if not causal_check.passed:
+                fidelity_warnings.append(f"causal_language_violation: {causal_check.detail}")
+
+            # 3. Recommendation fidelity
+            rec_str = " ".join(result.recommendations) if result.recommendations else None
+            rec_check = recommendation_fidelity(rec_str, generated_text)
+            if not rec_check.passed:
+                fidelity_warnings.append(f"recommendation_fidelity_failed: {rec_check.detail}")
+
+            # 4. Limitation preservation
+            if result.limitations:
+                lim_check = limitation_preserved(tuple(result.limitations), generated_text)
+                if not lim_check.passed:
+                    fidelity_warnings.append(f"limitation_omitted: {lim_check.detail}")
+
+            if fidelity_warnings:
+                logger.warning(
+                    "Generated explanation failed fidelity checks: %s. Using deterministic fallback.",
+                    fidelity_warnings,
+                )
+                fallback_text = deterministic_fallback_translation(
+                    result,
+                    reason=f"Fidelity validation failed ({'; '.join(fidelity_warnings)})",
+                )
+                return TranslationOutput(
+                    text=fallback_text,
+                    is_fallback=True,
+                    status="fallback_fidelity_failed",
+                    metadata={
+                        "dataset_id": result.dataset_id,
+                        "department": result.department,
+                        "fidelity_warnings": fidelity_warnings,
+                        "raw_generated_text": generated_text,
+                    },
+                    warnings=fidelity_warnings,
+                )
+
             return TranslationOutput(
                 text=generated_text,
                 is_fallback=False,

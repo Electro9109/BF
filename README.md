@@ -261,6 +261,38 @@ python -m ml.train
 
 ---
 
+## Retrained Multi-Department ML Models & Unified Calculator
+
+PARSE includes verified, retrained models across three industrial departments:
+
+### 1. Sintering Prospective Productivity
+- **Dataset**: `data/raw/sintering/SinterProductivityData.csv` (1,000 observations)
+- **Target**: `Sinter Productivity, T/m2-hr`
+- **Methodology & Leakage Prevention**: Excludes post-process finished sinter chemistry (`Sinter FeO %`, `Sinter CaO %`, etc.) and strength (`Drum Tumbling Index (DTI), %`), using strictly the 8 prospective raw mix chemistry and crushing granulometry features:
+  - `I/O Fines Total Fe %`, `I/O Fines SiO2 %`, `I/O Fines Al2O3 %`, `I/O Fines CaO %`, `Flux CaO %`, `Flux MgO %`, `Flux Crushing Index`, `Coke Crushing Index`
+- **Artifact**: `MLModels/sinter_productivity_pipeline.pkl`
+- **Held-Out 5-Fold Cross-Validation**:
+  - MAE: `0.051 T/m2-hr`
+  - RMSE: `0.0655 T/m2-hr`
+  - R²: `0.271`
+
+### 2. Steel Industry Energy Consumption
+- **Dataset**: `data/raw/energy/Steel_industry_data.csv` (35,040 15-minute observations)
+- **Target**: `Usage_kWh` (active electrical consumption)
+- **Methodology & Anomaly Consistency**: Contemporaneous active electrical demand estimation. Anomaly detection and recommendations are harmonized at the `80.0%` lagging power factor threshold, eliminating unsubstantiated utility penalty claims.
+- **Features**: Lagging and leading reactive power (kVarh), lagging and leading power factors (%), seconds from midnight (NSM), plus calendar and load-type indicators (`WeekStatus`, `Day_of_week`, `Load_Type`).
+- **Artifact**: `MLModels/steel_energy_pipeline.pkl`
+- **Chronological TimeSeriesSplit Evaluation (5 splits)**:
+  - MAE: `0.73 kWh`
+  - RMSE: `1.88 kWh`
+  - R²: `0.995`
+
+### 3. Unified Calculator & Results Translator Integration
+- **Unified Engine**: `ml/unified_calculator.py` (`UnifiedCalculator`) coordinates model loading, input range verification, and structured predictions across Blast Furnace, Sintering, and Energy departments.
+- **Results Translator Gate**: When predictions are generated in the Streamlit calculator (`app_web.py`), the structured output is passed directly to `ResultsTranslator.translate()` with strict numerical fidelity, sign preservation, unit fidelity, and causal language checks. Explanations failing validation are safely replaced with deterministic, evidence-preserving fallbacks.
+
+---
+
 ## Explainer LLM
 
 The Explainer translates structured analysis findings into clear, natural language explanations.

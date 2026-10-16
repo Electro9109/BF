@@ -9,8 +9,8 @@ from config.paths import SINTER_PRODUCTIVITY_CSV
 from parse.core.department import Department
 
 
-# Feature and target columns for sintering productivity
-SINTER_CHEM_COLS = [
+# Prospective input features available at prediction time (raw mix & crushing granulometry)
+SINTER_PROSPECTIVE_FEATURES = [
     "I/O Fines Total Fe %",
     "I/O Fines SiO2 %",
     "I/O Fines Al2O3 %",
@@ -19,6 +19,10 @@ SINTER_CHEM_COLS = [
     "Flux MgO %",
     "Flux Crushing Index",
     "Coke Crushing Index",
+]
+
+# Post-process finished sinter features (quality inspection after production)
+SINTER_RETROSPECTIVE_FEATURES = [
     "Sinter Total Fe %",
     "Sinter FeO %",
     "Sinter SiO2 %",
@@ -28,6 +32,9 @@ SINTER_CHEM_COLS = [
     "Sinter +40mm Size, %",
     "Drum Tumbling Index (DTI), %",
 ]
+
+# All available chemistry/quality features
+SINTER_CHEM_COLS = SINTER_PROSPECTIVE_FEATURES + SINTER_RETROSPECTIVE_FEATURES
 
 SINTER_TARGET_COLS = ["Sinter Productivity, T/m2-hr"]
 
@@ -62,7 +69,13 @@ class SinteringDepartment:
 
     @property
     def feature_columns(self) -> list[str]:
-        return list(SINTER_CHEM_COLS)
+        """Prospective features available at prediction time (avoids finished sinter leakage)."""
+        return list(SINTER_PROSPECTIVE_FEATURES)
+
+    @property
+    def retrospective_columns(self) -> list[str]:
+        """Post-process features available only after sintering run is finished."""
+        return list(SINTER_RETROSPECTIVE_FEATURES)
 
     @property
     def target_columns(self) -> list[str]:
