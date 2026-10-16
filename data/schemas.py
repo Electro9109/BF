@@ -11,6 +11,8 @@ class Chunk:
     source: str           # path relative to docs_dir
     topic: str             # canonical topic name
     section: str            # normalised section label
+    role: str = "reference"  # "reference" | "experiment_scenario"
+    metadata: dict | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)

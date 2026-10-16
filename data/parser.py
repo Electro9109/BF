@@ -32,7 +32,7 @@ _MARKDOWN_HEADING_RE = re.compile(r"^#{1,4}\s+\S.+$")
 _UPPERCASE_HEADING_RE = re.compile(r"^[A-Z][A-Z0-9 \-/]{3,}$")
 _KNOWN_HEADING_RE = re.compile(
     r"^(?:overview|key mechanisms|advantages|limitations|references|"
-    r"effect on T(?:s|m|m-Ts))(?:\s*[\(:-].*)?$",
+    r"scenario\s*\d+|effect on T(?:s|m|m-Ts))(?:\s*[\(:-].*)?$",
     re.IGNORECASE,
 )
 
@@ -163,12 +163,41 @@ def extract_topic(text: str, filename_stem: str) -> str:
     return filename_stem.lower()
 
 
+def extract_role(text: str, file_path_str: str = "") -> str:
+    """
+    Extract the document role: 'reference' or 'experiment_scenario'.
+
+    Priority:
+      1. Explicit ROLE: <role> header in the first 10 lines.
+      2. If path contains 'experiments', defaults to 'experiment_scenario'.
+      3. Defaults to 'reference'.
+    """
+    for line in text.splitlines()[:10]:
+        m = re.match(r"^ROLE[:\s]+(.+)$", line.strip(), re.IGNORECASE)
+        if m:
+            val = m.group(1).strip().lower()
+            if "experiment" in val or "scenario" in val:
+                return "experiment_scenario"
+            return "reference"
+    if "experiment" in file_path_str.lower():
+        return "experiment_scenario"
+    return "reference"
+
+
 def strip_topic_header(text: str) -> str:
-    """Remove the leading 'TOPIC: <name>' line (if present) before chunking."""
-    return re.sub(
+    """Remove the leading 'TOPIC: <name>' and optional 'ROLE: <role>' line (if present) before chunking."""
+    cleaned = re.sub(
         r"^TOPIC[:\s]+.+?\n",
         "",
         text,
         count=1,
         flags=re.IGNORECASE,
     )
+    cleaned = re.sub(
+        r"^ROLE[:\s]+.+?\n",
+        "",
+        cleaned,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    return cleaned

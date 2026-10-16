@@ -293,6 +293,32 @@ PARSE includes verified, retrained models across three industrial departments:
 
 ---
 
+## Document Roles & Qualitative Experiment Evaluation
+
+PARSE maintains a clear distinction between **Reference Knowledge** (established principles, definitions, operating ranges) and **Experiment Scenarios** (qualitative hypotheses, trial conditions, conditional tradeoffs).
+
+### 1. Document Roles and Provenance
+- Header convention: Documents in `docs/` can specify `ROLE: reference` or `ROLE: experiment_scenario` in the first 10 lines. Files in `docs/experiments/` default to `experiment_scenario`.
+- The chunking pipeline (`data.loader` and `data.schemas`) attaches `role` to every chunk.
+- Scenarios in `docs/experiments/experiment_scenarios.txt` are preserved as first-class qualitative context and are parsed into distinct section headers (`scenario 1: baseline case...` through `scenario 8: 100% pellet...`).
+
+### 2. Controlled Ingestion Pilot: Coke Quality
+- **File**: `docs/coke_quality.txt` (Role: `reference`, 3,245 bytes, SHA-256: `a230740a43131c0fc5533cdacd86110bea0ec9cb025aac36ade874bcaf60e87e`).
+- **Subject**: CRI (Coke Reactivity Index), CSR (Coke Strength after Reaction), solution loss (Boudouard reaction), and permeability preservation across the blast furnace cohesive zone.
+- **Verification**: Verified top-rank retrieval on distinctive query (*"What is Coke Strength after Reaction CSR and Coke Reactivity Index CRI?"* -> Rank 1: `coke_quality.txt`, score=0.741). Zero regression on the 22-question retrieval baseline (MRR=0.650, Hit@5=0.900).
+
+### 3. Qualitative Scenario Evaluation Harness
+- **Dataset**: `eval/qualitative_scenario_eval_set.json` (9 benchmark cases categorized into `verified`, `conditional`, and `unresolved`).
+- **Harness**: `eval/qualitative_eval.py` (`python -m eval.qualitative_eval`).
+- **Evaluated Dimensions**:
+  - Eligible verified directional accuracy (100% on 6 eligible verified cases).
+  - Target variable coverage (mean 1.0).
+  - Required concept & mechanism coverage (mean 0.88).
+  - Caveat & uncertainty recognition (mean 1.0).
+  - Scenario-specific retrieval hit rate (66.7%).
+
+---
+
 ## Explainer LLM
 
 The Explainer translates structured analysis findings into clear, natural language explanations.

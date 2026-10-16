@@ -1,0 +1,190 @@
+{
+  "version": 1,
+  "description": "Benchmark qualitative experiment scenario evaluation cases for PARSE decision support.",
+  "cases": [
+    {
+      "case_id": "scenario-1-baseline",
+      "scenario_id": "Scenario 1",
+      "source_id": "docs/experiments/experiment_scenarios.txt",
+      "case_type": "qualitative_prediction",
+      "verification_status": "verified",
+      "question": "What is the expected softening temperature (Ts) and cohesive zone width (Tm-Ts) for a baseline burden of 100% sinter under CO=40%, N2=60%?",
+      "conditions": {
+        "atmosphere": "CO=40%, N2=60%",
+        "burden": "100% Sinter"
+      },
+      "target_variables": ["Ts", "Tm-Ts"],
+      "expected_directions": {
+        "Ts": "highest",
+        "Tm-Ts": "narrow"
+      },
+      "required_concepts": ["high sinter reducibility", "absence of low-melting ore/pellet phases"],
+      "required_caveats": [],
+      "evidence_requirements": "docs/experiments/experiment_scenarios.txt"
+    },
+    {
+      "case_id": "scenario-2-h2-sinter",
+      "scenario_id": "Scenario 2",
+      "source_id": "docs/experiments/experiment_scenarios.txt",
+      "case_type": "qualitative_prediction",
+      "verification_status": "verified",
+      "question": "How does hydrogen enrichment (H2=8%, CO=40%) affect the softening temperature Ts and cohesive zone Tm-Ts for 100% sinter compared to the baseline?",
+      "conditions": {
+        "atmosphere": "CO=40%, H2=8%, N2=52%",
+        "burden": "100% Sinter"
+      },
+      "target_variables": ["Ts", "Tm-Ts"],
+      "expected_directions": {
+        "Ts": "decrease",
+        "Tm-Ts": "increase"
+      },
+      "required_concepts": ["early softening", "widening cohesive zone"],
+      "required_caveats": ["hydrogen reduction accelerates early kinetics but causes earlier softening under 100% sinter"],
+      "evidence_requirements": "docs/experiments/experiment_scenarios.txt"
+    },
+    {
+      "case_id": "scenario-3-sinter-ore",
+      "scenario_id": "Scenario 3",
+      "source_id": "docs/experiments/experiment_scenarios.txt",
+      "case_type": "qualitative_prediction",
+      "verification_status": "verified",
+      "question": "What is the effect of blending 30% iron ore with 70% sinter on softening temperature Ts?",
+      "conditions": {
+        "atmosphere": "CO=40%, N2=60%",
+        "burden": "70% Sinter + 30% Ore"
+      },
+      "target_variables": ["Ts"],
+      "expected_directions": {
+        "Ts": "decrease"
+      },
+      "required_concepts": ["early slag formation", "high FeO content", "low-melting slag phases"],
+      "required_caveats": [],
+      "evidence_requirements": "docs/experiments/experiment_scenarios.txt"
+    },
+    {
+      "case_id": "scenario-4-sinter-pellet",
+      "scenario_id": "Scenario 4",
+      "source_id": "docs/experiments/experiment_scenarios.txt",
+      "case_type": "comparison",
+      "verification_status": "verified",
+      "question": "How does replacing 30% ore with 30% acidic pellet affect softening temperature Ts and cohesive zone Tm-Ts?",
+      "conditions": {
+        "atmosphere": "CO=40%, N2=60%",
+        "burden": "70% Sinter + 30% Pellet relative to 70% Sinter + 30% Ore"
+      },
+      "target_variables": ["Ts", "Tm-Ts"],
+      "expected_directions": {
+        "Ts": "increase",
+        "Tm-Ts": "decrease"
+      },
+      "required_concepts": ["acidic pellets resist softening longer", "maintains shape", "narrows relative to ore blend"],
+      "required_caveats": [],
+      "evidence_requirements": "docs/experiments/experiment_scenarios.txt"
+    },
+    {
+      "case_id": "scenario-6-high-basicity",
+      "scenario_id": "Scenario 6",
+      "source_id": "docs/experiments/experiment_scenarios.txt",
+      "case_type": "qualitative_prediction",
+      "verification_status": "verified",
+      "question": "What happens to melting temperature Tm and cohesive zone width Tm-Ts when sinter basicity (CaO/SiO2) is increased toward optimum?",
+      "conditions": {
+        "atmosphere": "CO=40%, N2=60%",
+        "burden": "High-basicity sinter blend"
+      },
+      "target_variables": ["Tm", "Tm-Ts"],
+      "expected_directions": {
+        "Tm": "decrease",
+        "Tm-Ts": "decrease"
+      },
+      "required_concepts": ["lowers liquidus temperature of primary slag", "narrows cohesive zone"],
+      "required_caveats": [],
+      "evidence_requirements": "docs/experiments/experiment_scenarios.txt"
+    },
+    {
+      "case_id": "scenario-7-h2-high-ore-widest",
+      "scenario_id": "Scenario 7",
+      "source_id": "docs/experiments/experiment_scenarios.txt",
+      "case_type": "mechanism_explanation",
+      "verification_status": "conditional",
+      "question": "Why does combining 6.5% H2 with 20% iron ore lead to the widest cohesive zone Tm-Ts?",
+      "conditions": {
+        "atmosphere": "CO=37%, H2=6.5%, N2=56.5%",
+        "burden": "80% Sinter + 20% Ore"
+      },
+      "target_variables": ["Ts", "Tm-Ts"],
+      "expected_directions": {
+        "Ts": "decrease",
+        "Tm-Ts": "increase"
+      },
+      "required_concepts": ["combined effect of hydrogen reduction and FeO from ore", "significant depression in Ts"],
+      "required_caveats": ["conditional on ore FeO level and high reduction kinetics driving early softening"],
+      "evidence_requirements": "docs/experiments/experiment_scenarios.txt"
+    },
+    {
+      "case_id": "scenario-8-100-pellet-ndm",
+      "scenario_id": "Scenario 8",
+      "source_id": "docs/experiments/experiment_scenarios.txt",
+      "case_type": "qualitative_prediction",
+      "verification_status": "verified",
+      "question": "What is the expected softening behavior and pressure drop for 100% pellet burden under low CO (CO=34%, H2=6%)?",
+      "conditions": {
+        "atmosphere": "CO=34%, H2=6%, N2=60%",
+        "burden": "100% Pellet"
+      },
+      "target_variables": ["Ts", "pressure drop"],
+      "expected_directions": {
+        "Ts": "increase",
+        "pressure drop": "decrease"
+      },
+      "required_concepts": ["high T.Fe%", "low FeO", "resists early softening", "low pressure drop"],
+      "required_caveats": [],
+      "evidence_requirements": "docs/experiments/experiment_scenarios.txt"
+    },
+    {
+      "case_id": "apparent-contradiction-h2-kinetics-vs-ts",
+      "scenario_id": "Scenario 2 vs hydrogen_reduction.txt",
+      "source_id": "cross_document",
+      "case_type": "contradiction_handling",
+      "verification_status": "conditional",
+      "question": "Does hydrogen addition improve blast furnace reduction performance or worsen the cohesive zone?",
+      "conditions": {
+        "topic": "H2 enrichment tradeoffs"
+      },
+      "target_variables": ["reducibility", "cohesive zone"],
+      "expected_directions": {
+        "reducibility": "increase",
+        "cohesive zone": "conditional"
+      },
+      "required_concepts": [
+        "accelerates iron oxide reduction kinetics",
+        "early softening can depress Ts and widen cohesive zone under specific burden mixes"
+      ],
+      "required_caveats": [
+        "Tradeoff depends on burden composition, gas utilization, and pre-reduction state."
+      ],
+      "evidence_requirements": ["docs/hydrogen_reduction.txt", "docs/experiments/experiment_scenarios.txt"]
+    },
+    {
+      "case_id": "insufficient-info-unspecified-flux",
+      "scenario_id": "N/A",
+      "source_id": "unspecified",
+      "case_type": "insufficient_information",
+      "verification_status": "unresolved",
+      "question": "Predict the exact softening temperature Ts for an uncharacterized sinter with no chemistry or basicity provided.",
+      "conditions": {
+        "chemistry": "unknown",
+        "basicity": "unknown"
+      },
+      "target_variables": ["Ts"],
+      "expected_directions": {
+        "Ts": "unresolved"
+      },
+      "required_concepts": [],
+      "required_caveats": [
+        "Cannot predict softening temperature Ts without chemistry (FeO, CaO, SiO2, Al2O3, MgO) or basicity."
+      ],
+      "evidence_requirements": "uncertainty_statement"
+    }
+  ]
+}

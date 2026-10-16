@@ -85,7 +85,8 @@ def _assemble_context_with_matches(
     parts = []
     included_matches = []
     for original_rank, (chunk, score) in _order_for_context(ranked_matches):
-        header = f"[Source {original_rank}: {chunk.source} | Section: {chunk.section}]\n"
+        sec_label = chunk.section
+        header = f"[Source {original_rank}: {chunk.source} | Section: {sec_label}]\n"
         passage = header + chunk.content
         separator = "\n\n" if parts else ""
         remaining = max_context_chars - sum(map(len, parts)) - len(separator)

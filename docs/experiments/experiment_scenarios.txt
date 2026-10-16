@@ -1,4 +1,5 @@
 TOPIC: Metallurgical Experiment Scenarios
+ROLE: experiment_scenario
 
 The following 8 benchmark experiment scenarios detail various combinations of gas atmospheres and burden mixes, along with their observed/expected effects on softening and melting temperatures (Ts, Tm, Tm-Ts) and overall reducibility.
 

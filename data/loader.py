@@ -10,7 +10,7 @@ bug repairs documented in data/parser.py.
 import logging
 from pathlib import Path
 
-from data.parser import extract_topic, split_into_sections, strip_topic_header
+from data.parser import extract_role, extract_topic, split_into_sections, strip_topic_header
 from data.schemas import Chunk
 
 logger = logging.getLogger(__name__)
@@ -79,6 +79,7 @@ def load_and_chunk_data(docs_dir: str, strict: bool = False) -> list[Chunk]:
         # and BEFORE the chunk loop (previously `topic` was referenced
         # but never assigned at all).
         topic = extract_topic(text, file_path.stem)
+        role = extract_role(text, str(file_path))
         body = strip_topic_header(text)
         sections = split_into_sections(body)
         if not sections:
@@ -98,6 +99,7 @@ def load_and_chunk_data(docs_dir: str, strict: bool = False) -> list[Chunk]:
                 source=rel_source,
                 topic=topic,
                 section=section["section"],
+                role=role,
             ))
 
     return chunks

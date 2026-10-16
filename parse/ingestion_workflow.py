@@ -142,6 +142,8 @@ def normalize_staged_document(staged: StagedUpload) -> list[Chunk]:
     if staged.source.source_type != "document":
         raise ValueError("Only text documents can be parsed as retrieval chunks")
     text = decode_document_bytes(staged.content)
+    from data.parser import extract_role
+    role = extract_role(text, staged.filename)
     topic = extract_topic(text, Path(staged.filename).stem)
     sections = split_into_sections(strip_topic_header(text))
     if not sections:
@@ -157,6 +159,7 @@ def normalize_staged_document(staged: StagedUpload) -> list[Chunk]:
             source=rel_source,
             topic=topic,
             section=section["section"],
+            role=role,
         )
         for section in sections
     ]

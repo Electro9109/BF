@@ -1,0 +1,28 @@
+TOPIC: coke quality and degradation
+ROLE: reference
+
+OVERVIEW
+Coke quality and hot degradation directly govern permeability and gas flow resistance in the blast furnace shaft, cohesive zone, and hearth deadman. Because lump coke is the only solid material that survives beyond the softening and melting zone, its strength and reactivity dictate the structural integrity of the coke slits and the gas pressure drop across the cohesive zone.
+
+KEY MECHANISMS
+Coke degradation inside the blast furnace proceeds through three primary mechanisms:
+1. Solution loss (Boudouard gasification): C + CO2 -> 2CO. Carbon dissolution starts around 900-950°C and accelerates above 1050°C, increasing coke porosity and thinning coke cell walls.
+2. Alkali catalytic attack: Potassium and sodium vapours circulating in the lower shaft intercalate into the carbon lattice and catalyze gasification, accelerating coke fissuring.
+3. Thermal and mechanical abrasion: Extreme temperatures (1500-2000°C) and turbulence in the raceway induce microcracking and fines generation (-3mm coke fines).
+
+EFFECT ON TS
+Coke quality does not alter the intrinsic softening temperature (Ts) of the metallic burden (sinter, ore, pellets). However, high-quality coke preserves open, permeable coke slits between softening ore layers, preventing premature collapse of burden layers as Ts is approached.
+
+EFFECT ON TM-TS
+While Tm-Ts is determined by burden chemistry and slag formation, high-strength coke preserves the integrity of coke slits traversing the cohesive zone (the Tm-Ts temperature window). Degradation of coke within the Tm-Ts interval constricts gas flow windows, forcing ascending gases through narrower pathways and exacerbating localized pressure drops.
+
+EFFECT ON PERMEABILITY
+Coke bed permeability directly determines the total blast furnace pressure drop. High Coke Strength after Reaction (CSR) and low Coke Reactivity Index (CRI) preserve bed voidage (typically 0.40 to 0.50). Conversely, excessive coke gasification generates fine particles that accumulate in the deadman and dripping zone, choking gas passage and causing erratic gas channeling.
+
+ADVANTAGES
+- High CSR coke maintains open coke slits in the cohesive zone, sustaining permeability at high blast volumes.
+- Enables higher Pulverized Coal Injection (PCI) rates by compensating for reduced specific coke rate.
+- Reduces deadman fines accumulation and stabilizes molten iron drainage.
+
+LIMITATIONS
+- Standard CRI/CSR indices (ASTM D5341 / ISO 18894) are measured in pure CO2 at 1100°C, omitting the simultaneous effects of multi-component gas atmospheres, alkali vapors, and vertical mechanical burden pressure.
