@@ -399,3 +399,23 @@ def test_sanitize_metallurgical_units_strips_temperature_from_basicity():
     assert "1.6-2.2" in cleaned_mixed
     assert "Ts is 1250°C" in cleaned_mixed
     assert "Tm is 1450°C" in cleaned_mixed
+
+    # Edge case 1: Comma boundary between basicity and temperature
+    comma_case = "Basicity is 1.6, while the temperature is 1250°C."
+    assert sanitize_metallurgical_units(comma_case) == comma_case
+
+    # Edge case 2: Non-numeric basicity description with later temperature in same sentence
+    non_numeric = "Basicity is low while the temperature is 1250°C."
+    assert sanitize_metallurgical_units(non_numeric) == non_numeric
+
+    # Edge case 3: En-dash range with spurious unit
+    endash_case = "The basicity range is 1.6–1.9°C."
+    assert sanitize_metallurgical_units(endash_case) == "The basicity range is 1.6–1.9."
+
+    # Edge case 4: Basicity with Tm-Ts cohesive zone interval
+    cohesive_case = "Basicity of 1.6-1.9 yields cohesive zone width Tm-Ts of 150°C."
+    assert sanitize_metallurgical_units(cohesive_case) == cohesive_case
+
+    # Edge case 5: Unrelated non-metallurgical values and units are not altered
+    unrelated = "Unrelated conveyor speed is 50 km/h and mass is 10 kg."
+    assert sanitize_metallurgical_units(unrelated) == unrelated

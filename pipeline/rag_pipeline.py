@@ -257,18 +257,32 @@ def sanitize_metallurgical_units(text: str) -> str:
     Basicity (B2 = CaO/SiO2, B4) is a dimensionless ratio. Generative models
     sometimes bleed adjacent temperature units (°C) from softening-melting contexts
     onto basicity figures.
+
+    Scoped strictly to avoid stripping valid temperature units (e.g. Ts, Tm,
+    cohesive zone interval, or general temperatures in the same sentence).
     """
     if not text:
         return text
-    # Strip °C or deg C following basicity references and ranges
-    cleaned = re.sub(
-        r'(\bbasicity\b[^.\n]*?\b\d+(?:\.\d+)?(?:\s*(?:-|–|—|to)\s*\d+(?:\.\d+)?)?)\s*(?:°\s*C|deg(?:rees?)?\s*C\b)',
-        r'\1',
-        text,
-        flags=re.IGNORECASE,
+
+    # Pattern: 'basicity' followed directly by a number or range and °C/deg C
+    # Excludes clause boundaries (, ; : .) and temperature tokens (temp, Ts, Tm)
+    # between 'basicity' and the number.
+    pattern = re.compile(
+        r'(\bbasicity\b[^,;.:\n]*?\b(?:(?:around|approx(?:\.|imately)?|targeted?|range|of|is|at|near)\s+)?~?\s*\d+(?:\.\d+)?(?:\s*(?:-|–|—|to)\s*\d+(?:\.\d+)?)?)\s*(?:°\s*C|deg(?:rees?)?\s*C\b)',
+        re.IGNORECASE,
     )
+
+    def _repl(match):
+        segment = match.group(1)
+        if re.search(r'\b(?:temperature|temp|ts|tm)\b', segment, re.IGNORECASE):
+            return match.group(0)  # preserve valid temperature unit
+        return segment
+
+    cleaned = pattern.sub(_repl, text)
+
+    # Handle bracketed basicity, e.g. 'basicity (around 1.6-1.9)°C' or 'basicity (1.6-1.9)°C'
     cleaned = re.sub(
-        r'(\bbasicity\b[^.\n]*?\(\s*around\s*\d+(?:\.\d+)?(?:\s*(?:-|–|—|to)\s*\d+(?:\.\d+)?)?\s*\))\s*(?:°\s*C|deg(?:rees?)?\s*C\b)',
+        r'(\bbasicity\s*\(\s*(?:around\s*)?~?\s*\d+(?:\.\d+)?(?:\s*(?:-|–|—|to)\s*\d+(?:\.\d+)?)?\s*\))\s*(?:°\s*C|deg(?:rees?)?\s*C\b)',
         r'\1',
         cleaned,
         flags=re.IGNORECASE,
