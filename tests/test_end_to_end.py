@@ -19,18 +19,20 @@ class TestEndToEndWorkflows:
         """Scenario 1: User asks a question answerable from stored technical reference."""
         # This would require the RAG pipeline and LLM
         # For deterministic testing, we verify the retrieval component works
-        from pipeline.rag_pipeline import build_engine, load_model
-        from config.paths import LLM_MODEL_DIR
+        from pipeline.rag_pipeline import build_engine
+        from config.paths import DOCS_DIR
         
         try:
-            if not Path(LLM_MODEL_DIR).exists():
-                pytest.skip("LLM model directory not found")
-            model = load_model(LLM_MODEL_DIR)
-            engine = build_engine(model)
+            if not Path(DOCS_DIR).exists():
+                pytest.skip("Docs directory not found")
+            engine, chunks = build_engine(str(DOCS_DIR))
+
+            if engine is None:
+                pytest.skip("No chunks found to build engine")
             
             # Test that retrieval works
             question = "What is the basicity range for sinter?"
-            results = engine.search(question, top_k=5)
+            results = engine.search(question, top_n=5)
             
             # Verify retrieval returns results
             assert len(results) > 0, "Retrieval should return results"
@@ -41,6 +43,8 @@ class TestEndToEndWorkflows:
                 assert chunk.section is not None, "Chunk should have section"
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             pytest.skip(f"RAG pipeline test skipped: {e}")
 
     def test_scenario_2_numerical_dataset_question(self):
@@ -120,18 +124,20 @@ class TestEndToEndWorkflows:
         """Scenario 5: User asks a question that cannot be answered from available sources."""
         # This would require the RAG pipeline
         # For deterministic testing, we verify the component handles unanswerable queries
-        from pipeline.rag_pipeline import build_engine, load_model
-        from config.paths import LLM_MODEL_DIR
+        from pipeline.rag_pipeline import build_engine
+        from config.paths import DOCS_DIR
         
         try:
-            if not Path(LLM_MODEL_DIR).exists():
-                pytest.skip("LLM model directory not found")
-            model = load_model(LLM_MODEL_DIR)
-            engine = build_engine(model)
+            if not Path(DOCS_DIR).exists():
+                pytest.skip("Docs directory not found")
+            engine, chunks = build_engine(str(DOCS_DIR))
+
+            if engine is None:
+                pytest.skip("No chunks found to build engine")
             
             # Ask a question about a topic not in the corpus
             question = "What is the temperature of the sun?"
-            results = engine.search(question, top_k=5)
+            results = engine.search(question, top_n=5)
             
             # Retrieval may return empty or low-relevance results
             # The important thing is that it doesn't fabricate an answer

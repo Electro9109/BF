@@ -162,3 +162,11 @@ class TestQueryDatasetConvenience:
         result = query_dataset("blast_furnace", "invalid_operation")
         assert not result.success
         assert result.error is not None
+
+    def test_convenience_get_statistics_overall(self):
+        """Test getting overall dataset statistics without specifying a column."""
+        result = query_dataset("blast_furnace", "get_statistics")
+        assert result.success
+        assert "row_count" in result.data
+        assert "column_count" in result.data
+        assert result.data["row_count"] > 0

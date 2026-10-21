@@ -1294,7 +1294,11 @@ with tab_query:
     params = {}
     
     if operation == "get_statistics":
-        col_options = ["Overall dataset statistics"]  # Will be populated dynamically
+        engine = StructuredQueryEngine()
+        col_result = engine.get_columns(dataset_id)
+        col_options = ["Overall dataset statistics"]
+        if col_result.success and col_result.data:
+            col_options.extend(list(col_result.data.keys()))
         params["column"] = st.selectbox("Column (optional)", col_options)
         if params["column"] == "Overall dataset statistics":
             params["column"] = None
