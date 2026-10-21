@@ -47,35 +47,43 @@ PARSE is an industrial data-analysis and decision-support platform for steel man
 
 ### A.3 Files Modified
 - `PARSE_RELEASE_AUDIT.md`: Added (initial audit document)
-- `PARSE_RELEASE_REPORT.md`: Updated with full UI verification and RAG generation evidence
-- `PARSE_DEMO_GUIDE.md`: Added (demonstration guide)
+- `PARSE_RELEASE_REPORT.md`: Updated with full UI verification, RAG generation evidence, and test count reconciliation
+- `PARSE_DEMO_GUIDE.md`: Added (demonstration guide with `streamlit run app_web.py` entry point)
 - `tests/test_end_to_end.py`: Fixed RAG pipeline test defects (incorrect build_engine call, wrong parameter name)
 - `tests/test_structured_query.py`: Added regression test `test_convenience_get_statistics_overall`
+- `tests/test_llm_pipeline.py`: Added regression test `test_sanitize_metallurgical_units_strips_temperature_from_basicity`
 - `app_web.py`: Populated dynamic column selection in Structured Data Query `get_statistics`
+- `llm/domain_prompts.py`: Explicitly encoded metallurgical unit correctness rules (basicity is a dimensionless ratio)
+- `pipeline/rag_pipeline.py`: Added `sanitize_metallurgical_units` post-processing guard to guarantee basicity values do not bleed temperature units (°C)
 
 **Source code changes:**
 - Fixed `test_scenario_1_technical_document_question`: Changed `build_engine(model)` to `build_engine(docs_dir)` and `top_k` to `top_n`
 - Fixed `test_scenario_5_insufficient_evidence`: Changed `build_engine(model)` to `build_engine(docs_dir)` and `top_k` to `top_n`
 - Updated `app_web.py`: Populated column options for `get_statistics` dynamically via `StructuredQueryEngine.get_columns`
-- Added `test_convenience_get_statistics_overall` in `tests/test_structured_query.py`
-- Result: 431 total tests pass (0 skipped, 0 failed)
+- Added `test_convenience_get_statistics_overall` in `tests/test_structured_query.py` (+1 test)
+- Added `test_sanitize_metallurgical_units_strips_temperature_from_basicity` in `tests/test_llm_pipeline.py` (+1 test)
+- Result: **432 total tests pass (0 skipped, 0 failed)**
 
 ---
 
 ## B. Verification Results
 
-### B.1 Test Suite Execution
+### B.1 Test Suite Reconciliation and Execution
+Exact execution output of the final test run:
 ```bash
-python -m pytest tests/ -q -rs
+python -m pytest -q -rs
 ```
-**Result:** 431 passed, 0 skipped, 54.07s execution time
+**Result:** `432 passed in 55.77s` (0 skipped, 0 failed, 100% pass rate).
 
-**Defects fixed:**
-1. 2 RAG pipeline end-to-end tests were previously skipped due to outdated `build_engine` signatures in `test_end_to_end.py`. Fixed to use correct signature and parameters.
-2. In `app_web.py`, `get_statistics` under the Structured Query tab had a placeholder column list (`["Overall dataset statistics"]`). Updated to dynamically populate columns from the selected dataset.
-3. Added regression coverage for overall statistics query.
-
-**All 431 tests now pass.**
+**Reconciliation of Historical vs. Final Test Counts:**
+1. **Historical 428 passed, 2 skipped (Total = 430):**
+   - In earlier phases, `tests/test_end_to_end.py` contained two RAG tests (`test_scenario_1_technical_document_question` and `test_scenario_5_insufficient_evidence`) that called an obsolete `build_engine(model)` signature from before the retrieval/LLM decoupling. These 2 tests failed in `try...except` and were skipped (`pytest.skip`).
+2. **Phase Baseline 430 passed, 0 skipped (Total = 430):**
+   - Corrected `tests/test_end_to_end.py` to call `build_engine(str(DOCS_DIR))` with `top_n=5`. Both previously skipped tests passed, bringing passed tests from 428 to 430 (0 skipped).
+3. **Structured Query Fix 431 passed, 0 skipped (Total = 431):**
+   - Added `test_convenience_get_statistics_overall` to `tests/test_structured_query.py` to verify overall dataset summary stats when no column parameter is passed.
+4. **Final Technical Correctness 432 passed, 0 skipped (Total = 432):**
+   - Added `test_sanitize_metallurgical_units_strips_temperature_from_basicity` in `tests/test_llm_pipeline.py` to test both prompt-level and post-processing unit correctness.
 
 ### B.2 Setup Check
 ```bash
@@ -105,14 +113,19 @@ python setup_check.py
 - Verified input validation warnings for out-of-range inputs
 
 ### B.4 RAG Pipeline and LLM Verification
-**Execution Evidence:**
-- Retrieval Engine built: 149 chunks from 15 documents
-- Local LLM: Loaded on CPU (`LocalModels/`)
-- In-domain technical question (*"What is the basicity range for sinter?"*):
-  - Result: Correctly answered *"around 1.6-1.9°C"* citing `sinter.txt` and `basicity.txt`
-- Out-of-corpus question (*"What is the temperature of the sun?"*):
+**Basicity Unit Investigation and Fix:**
+- **Issue:** The local LLM previously generated *"The basicity range for sinter is around 1.6-1.9°C..."*.
+- **Root Cause:** In metallurgical texts, basicity ranges (~1.6–1.9) frequently co-occur in the same sentence as cohesive zone temperature intervals ($T_m - T_s$ 130–180°C) and softening/melting temperatures ($T_s, T_m$). The local Qwen-0.5B-Chat model occasionally bled the adjacent temperature unit (`°C`) onto the basicity value.
+- **Resolution:**
+  1. Updated `SYSTEM_INSTRUCTION` in `llm/domain_prompts.py` to explicitly declare: *"Unit correctness rules: Basicity (B2, B4) is a dimensionless chemical ratio; never attach temperature units (°C) to basicity values. Temperatures (Ts, Tm, Tm-Ts) have units of °C."*
+  2. Implemented `sanitize_metallurgical_units` in `pipeline/rag_pipeline.py` to systematically strip erroneous temperature suffixes from basicity ratios while preserving units on temperatures.
+  3. Added regression test `test_sanitize_metallurgical_units_strips_temperature_from_basicity` in `tests/test_llm_pipeline.py`.
+- **Live LLM Execution Result:**
+  - Query: *"What is the basicity range for sinter?"*
+  - Generated Output: *"The basicity range for sinter is around 1.6-1.9. This value is influenced by the same slag chemistry near-eutectic composition."*
+  - Verified: Dimensionless ratio correctly reported without temperature units.
+- **Out-of-corpus Question (*"What is the temperature of the sun?"*):**
   - Result: Correctly declined to invent facts: *"I could not find a confident answer in your documents. The retrieved paragraphs may not contain enough detail..."*
-- Grounding & safe handling verified.
 
 ---
 
@@ -122,15 +135,16 @@ python setup_check.py
 - [x] Critical defects identified and verified
 - [x] UI simplify helpers verified on `AttributeProfile` and `Finding` dicts
 - [x] Structured Data Query column options populated dynamically
+- [x] Basicity unit error investigated, fixed, and verified on live local LLM
 - [x] Public contracts and user workflows intact
-- [x] Automated test suite passes (431 passed, 0 skipped, 0 failed)
+- [x] Automated test suite passes (432 passed, 0 skipped, 0 failed)
 - [x] Documented setup and application launch procedure reproducible (`python setup_check.py`, `streamlit run app_web.py`)
 - [x] Existing prediction models load and validate inputs/outputs across all 3 departments
 - [x] Structured analytical results checked (EDA, statistics, correlations)
 - [x] Real RAG generation tested and verified on local model
 - [x] Source attribution and evidence handling assessed (grounded responses, unanswerable queries safely declined)
 - [x] Documentation agrees with implementation
-- [x] Release report contains actual observed execution evidence
+- [x] Release report contains actual observed execution evidence and test reconciliation
 - [x] No unrelated scope expansion
 
 ### C.2 Release Recommendation
@@ -138,11 +152,11 @@ python setup_check.py
 
 **Rationale:**
 1. All critical defects from previous audits and UI inspections have been verified and resolved
-2. Test suite passes completely (431/431 tests passing)
+2. Test suite passes completely (432/432 tests passing)
 3. Model artifacts across all three departments verified functional with out-of-range input validation
-4. Local LLM RAG answering verified end-to-end: accurate technical answers and proper decline on unanswerable questions
+4. Local LLM RAG answering verified end-to-end: accurate technical answers with technically defensible dimensionless basicity units, and proper decline on unanswerable questions
 5. Structured querying operational with full dataset statistics and column filters
-6. Demonstration guide provided in `PARSE_DEMO_GUIDE.md`
+6. Demonstration guide provided in `PARSE_DEMO_GUIDE.md` using the canonical `streamlit run app_web.py` command
 
 **Documented limitations:**
 1. **Dual EDA engines maintained:**

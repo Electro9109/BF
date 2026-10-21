@@ -380,3 +380,22 @@ def test_complete_answer_not_artificially_truncated_by_pipeline():
     result = _apply_hallucination_guard(long_answer, context)
     assert len(result) == len(long_answer)
     assert result.endswith("cohesive zone dynamics. ")
+
+
+def test_sanitize_metallurgical_units_strips_temperature_from_basicity():
+    """Verify basicity is formatted as a dimensionless ratio without temperature units."""
+    from pipeline.rag_pipeline import sanitize_metallurgical_units
+
+    # Spurious unit on basicity range
+    sample_answer = "The basicity range for sinter is around 1.6-1.9°C. This is influenced by slag chemistry."
+    cleaned = sanitize_metallurgical_units(sample_answer)
+    assert "1.6-1.9°C" not in cleaned
+    assert "around 1.6-1.9" in cleaned
+    assert "°C" not in cleaned
+
+    # Basicity ratio without units is left intact, true temperatures retain °C
+    mixed_answer = "Basicity is typically 1.6-2.2 for sinter, softening temperature Ts is 1250°C, and Tm is 1450°C."
+    cleaned_mixed = sanitize_metallurgical_units(mixed_answer)
+    assert "1.6-2.2" in cleaned_mixed
+    assert "Ts is 1250°C" in cleaned_mixed
+    assert "Tm is 1450°C" in cleaned_mixed

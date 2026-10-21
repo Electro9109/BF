@@ -251,6 +251,31 @@ def answer_question(
     return result.answer, result.matches
 
 
+def sanitize_metallurgical_units(text: str) -> str:
+    """Ensure basicity values are not erroneously formatted with temperature units.
+
+    Basicity (B2 = CaO/SiO2, B4) is a dimensionless ratio. Generative models
+    sometimes bleed adjacent temperature units (°C) from softening-melting contexts
+    onto basicity figures.
+    """
+    if not text:
+        return text
+    # Strip °C or deg C following basicity references and ranges
+    cleaned = re.sub(
+        r'(\bbasicity\b[^.\n]*?\b\d+(?:\.\d+)?(?:\s*(?:-|–|—|to)\s*\d+(?:\.\d+)?)?)\s*(?:°\s*C|deg(?:rees?)?\s*C\b)',
+        r'\1',
+        text,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r'(\bbasicity\b[^.\n]*?\(\s*around\s*\d+(?:\.\d+)?(?:\s*(?:-|–|—|to)\s*\d+(?:\.\d+)?)?\s*\))\s*(?:°\s*C|deg(?:rees?)?\s*C\b)',
+        r'\1',
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return cleaned
+
+
 def _apply_hallucination_guard(response: str, context: str) -> str:
     """
     This lightweight lexical-overlap check catches some ungrounded outputs,
@@ -266,7 +291,7 @@ def _apply_hallucination_guard(response: str, context: str) -> str:
             "The retrieved paragraphs may not contain enough detail. "
             "Try rephrasing your question or adding more content to the document."
         )
-    return response
+    return sanitize_metallurgical_units(response)
 
 
 __all__ = [
